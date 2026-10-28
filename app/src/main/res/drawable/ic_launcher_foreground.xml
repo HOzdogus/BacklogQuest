@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A little handheld: LCD screen with a play arrow, and an A button -->
+    <path
+        android:fillColor="#3A3456"
+        android:pathData="M34,28 h40 a4,4 0 0,1 4,4 v44 a4,4 0 0,1 -4,4 h-40 a4,4 0 0,1 -4,-4 v-44 a4,4 0 0,1 4,-4 z" />
+    <path
+        android:fillColor="#C7D19C"
+        android:pathData="M38,34 h32 v22 h-32 z" />
+    <path
+        android:fillColor="#262A17"
+        android:pathData="M50,39 L61,45 L50,51 Z" />
+    <path
+        android:fillColor="#E4584D"
+        android:pathData="M66,68 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+    <path
+        android:fillColor="#F2B544"
+        android:pathData="M40,66 h12 v4 h-12 z M44,62 h4 v12 h-4 z" />
+</vector>
