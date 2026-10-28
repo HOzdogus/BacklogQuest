@@ -16,6 +16,17 @@ android {
         versionName = "1.0"
     }
 
+    // A fixed key committed to the repo, so every build is signed the same way
+    // and new APKs install over the old one without uninstalling.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
