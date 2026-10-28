@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.backlogquest.app.data.playedOn
 import com.backlogquest.app.data.AppState
 import com.backlogquest.app.data.BUCKETS
 import com.backlogquest.app.data.BacklogViewModel
@@ -71,14 +72,14 @@ private fun buildList(
             (hist + app).asReversed().filter {
                 when (it) {
                     is LibItem.Hist -> match(it.c.title, it.c.platform)
-                    is LibItem.Own -> match(it.g.title, deviceName(s, it.g.device))
+                    is LibItem.Own -> match(it.g.title, playedOn(s, it.g))
                     else -> true
                 }
             }
         }
         "wishlist" -> {
             val own: List<LibItem> = s.games
-                .filter { it.status == "wishlist" && match(it.title, deviceName(s, it.device)) && inBucket(it.est, time) }
+                .filter { it.status == "wishlist" && match(it.title, playedOn(s, it)) && inBucket(it.est, time) }
                 .map { LibItem.Own(it, null) }
             val imported: List<LibItem> = ref.wishlist.withIndex()
                 .filter { (_, w) ->
@@ -105,7 +106,7 @@ private fun buildList(
         }
         else -> {
             val list = s.games.filter {
-                it.status == tab && match(it.title, deviceName(s, it.device)) &&
+                it.status == tab && match(it.title, playedOn(s, it)) &&
                     (tab != "backlog" || inBucket(it.est, time))
             }
             val sorted = if (tab == "backlog" && sort == "short") {
@@ -213,20 +214,20 @@ fun GamesScreen(
                     val n = item.number
                     val meta = if (g.status == "beaten") {
                         listOf(
-                            deviceName(s, g.device),
+                            playedOn(s, g),
                             if (g.hours > 0) "${fmtNum(g.hours)}h played" else "",
                             fmtDate(g.beatenAt),
                             "+${gameXp(g)} XP",
                         ).filter { it.isNotBlank() }.joinToString(" · ")
                     } else {
-                        listOf(deviceName(s, g.device), g.genre, if (g.series.isNotBlank()) "${g.series} series" else "", estText(g))
+                        listOf(playedOn(s, g), g.genre, if (g.series.isNotBlank()) "${g.series} series" else "", estText(g))
                             .filter { it.isNotBlank() }.joinToString(" · ")
                     }
                     if (f.grid) {
                         GridCard(
                             g.title, g.genre.ifBlank { deviceName(s, g.device) }, g.cover,
                             badge = n?.let { "#$it" },
-                            meta = deviceName(s, g.device) + if (g.est > 0 && g.status != "beaten") " · ${fmtNum(g.est)}h" else "",
+                            meta = playedOn(s, g) + if (g.est > 0 && g.status != "beaten") " · ${fmtNum(g.est)}h" else "",
                         ) { onEdit(g.id) }
                     } else {
                         ListRow(

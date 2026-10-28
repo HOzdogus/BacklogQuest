@@ -89,6 +89,17 @@ fun fmtDate(d: String): String {
 fun deviceName(s: AppState, id: String): String =
     s.devices.firstOrNull { it.id == id }?.name ?: "Unknown"
 
+/** "PS2 on PC" when the platform differs from the device, otherwise just the device. */
+fun playedOn(s: AppState, g: Game): String {
+    val d = deviceName(s, g.device)
+    return if (g.platform.isBlank() || g.platform.equals(d, ignoreCase = true)) d else "${g.platform} on $d"
+}
+
+/** Platforms you've used before, most used first. */
+fun knownPlatforms(s: AppState): List<String> =
+    s.games.map { it.platform.trim() }.filter { it.isNotEmpty() }
+        .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+
 fun isExempt(s: AppState, id: String): Boolean =
     s.devices.firstOrNull { it.id == id }?.exempt ?: false
 
@@ -112,7 +123,7 @@ data class Totals(
 
 /** Every completion: imported history first, then games beaten in the app. */
 fun allDone(s: AppState, ref: RefData): List<Completion> =
-    ref.history + beaten(s).map { Completion(it.title, deviceName(s, it.device), it.beatenAt) }
+    ref.history + beaten(s).map { Completion(it.title, it.platform.ifBlank { deviceName(s, it.device) }, it.beatenAt) }
 
 fun totals(s: AppState, ref: RefData): Totals {
     val b = beaten(s)

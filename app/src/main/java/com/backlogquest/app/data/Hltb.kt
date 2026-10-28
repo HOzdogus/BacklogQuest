@@ -26,6 +26,8 @@ object Hltb {
         val extras: Double,
         val completionist: Double,
         val cover: String,
+        /** Platforms HLTB lists for the game, e.g. ["PlayStation 2", "PC"]. */
+        val platforms: List<String> = emptyList(),
     )
 
     class LookupError(message: String) : Exception(message)
@@ -75,6 +77,8 @@ object Hltb {
             extras = hours("comp_plus"),
             completionist = hours("comp_100"),
             cover = if (image.isNotBlank()) "${BASE}games/$image" else "",
+            platforms = (if (best.isNull("profile_platform")) "" else best.optString("profile_platform", ""))
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() },
         )
     }
 

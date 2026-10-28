@@ -36,6 +36,8 @@ data class Game(
     val order: Long = 0,
     /** A web address or a file on the phone. Empty means use the cartridge label. */
     val cover: String = "",
+    /** The system the game is for (e.g. PS2), when that's not the device you play it on. Empty = same. */
+    val platform: String = "",
 )
 
 /** Everything you can change in the app. Saved on the phone. */

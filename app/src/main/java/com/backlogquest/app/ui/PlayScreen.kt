@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.backlogquest.app.data.playedOn
 import com.backlogquest.app.data.BUCKETS
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
@@ -214,7 +215,7 @@ fun PlayScreen(
                         )
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                listOf(deviceName(s, game.device), estText(game), game.genre)
+                                listOf(playedOn(s, game), estText(game), game.genre)
                                     .filter { it.isNotBlank() }.joinToString(" · "),
                                 color = BQ.Ink,
                             )

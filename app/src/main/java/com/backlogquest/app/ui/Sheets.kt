@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
 import com.backlogquest.app.data.Hltb
+import com.backlogquest.app.data.knownPlatforms
 import com.backlogquest.app.data.Rawg
 import com.backlogquest.app.data.STATUSES
 import com.backlogquest.app.data.fmtHours
@@ -67,6 +68,8 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
 
     var title by remember(target) { mutableStateOf(start.title) }
     var device by remember(target) { mutableStateOf(start.device) }
+    var platform by remember(target) { mutableStateOf(start.platform) }
+    var foundPlatforms by remember(target) { mutableStateOf(listOf<String>()) }
     var status by remember(target) { mutableStateOf(start.status) }
     var genre by remember(target) { mutableStateOf(start.genre) }
     var est by remember(target) { mutableStateOf(if (start.est > 0) fmtNum(start.est) else "") }
@@ -119,6 +122,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                     title = h.title.take(120)
                     lookupTitle = h.title
                     hltbCover = h.cover
+                    foundPlatforms = h.platforms
                     if (h.main > 0) {
                         est = fmtNum((h.main * 2).roundToInt() / 2.0)
                         estSource = "hltb"
@@ -182,7 +186,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         )
         var rec = baseGame.copy(
             title = t, device = device, status = status, genre = genre.trim(), est = estNum,
-            series = series.trim(), desc = desc.trim(),
+            series = series.trim(), desc = desc.trim(), platform = platform.trim(),
             estSource = if (estNum > 0) estSource.ifBlank { "manual" } else "",
             cover = cover,
         )
@@ -259,6 +263,23 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 s.devices.forEach { d -> TabChip(d.name, device == d.id) { device = d.id } }
             }
+            OutlinedTextField(
+                value = platform, onValueChange = { platform = it.take(40) },
+                label = { Text("Platform") },
+                placeholder = { Text("Leave blank if it's the same as the device") },
+                singleLine = true, colors = bqFieldColors(), modifier = Modifier.fillMaxWidth(),
+            )
+            val platformChoices = (foundPlatforms + knownPlatforms(s)).distinctBy { it.lowercase() }.take(10)
+            if (platformChoices.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    platformChoices.forEach { p ->
+                        TabChip(p, platform.equals(p, ignoreCase = true)) {
+                            platform = if (platform.equals(p, ignoreCase = true)) "" else p
+                        }
+                    }
+                }
+            }
+            Hint("The system the game is for, e.g. PS2 when you play it on PC through an emulator.")
             Text("Status", color = BQ.Muted, fontSize = 12.sp)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 STATUSES.forEach { (key, label) -> TabChip(label, status == key) { status = key } }
@@ -366,6 +387,7 @@ fun WishSheet(vm: BacklogViewModel, id: String, onDismiss: () -> Unit) {
     }
     val s = vm.state
     var device by remember(id) { mutableStateOf(s.devices.first().id) }
+    var platform by remember(id) { mutableStateOf(w.platforms.singleOrNull().orEmpty()) }
     var confirmNo by remember(id) { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -401,6 +423,14 @@ fun WishSheet(vm: BacklogViewModel, id: String, onDismiss: () -> Unit) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 s.devices.forEach { d -> TabChip(d.name, device == d.id) { device = d.id } }
             }
+            if (w.platforms.isNotEmpty()) {
+                Text("Platform version", color = BQ.Muted, fontSize = 12.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    w.platforms.forEach { p ->
+                        TabChip(p, platform == p) { platform = if (platform == p) "" else p }
+                    }
+                }
+            }
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -420,7 +450,7 @@ fun WishSheet(vm: BacklogViewModel, id: String, onDismiss: () -> Unit) {
                 PixelButton("CLOSE", onClick = onDismiss)
                 PixelButton("GOT IT → BACKLOG", kind = BtnKind.A) {
                     val g = Game(
-                        id = newId(), title = w.title, device = device, status = "backlog",
+                        id = newId(), title = w.title, device = device, status = "backlog", platform = platform,
                         est = if (w.hours > 0) w.hours else 0.0,
                         estSource = if (w.hours > 0) "hltb" else "",
                         addedAt = today(), order = System.currentTimeMillis(),
