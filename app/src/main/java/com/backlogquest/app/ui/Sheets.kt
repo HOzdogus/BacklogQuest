@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
+import com.backlogquest.app.data.Hltb
 import com.backlogquest.app.data.Rawg
 import com.backlogquest.app.data.STATUSES
 import com.backlogquest.app.data.fmtHours
@@ -106,28 +107,62 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         busy = true
         note = "Looking up $t…"
         scope.launch {
+            val parts = mutableListOf<String>()
+            var hltbCover = ""
+            var lookupTitle = t
+            // Time to beat from HowLongToBeat.
             try {
-                val r = Rawg.lookup(vm.state.rawgKey, t)
-                if (r == null) {
-                    note = "Couldn't find that game. Check the spelling, or fill it in yourself."
+                val h = Hltb.lookup(t)
+                if (h == null) {
+                    parts += "Not found on HowLongToBeat."
                 } else {
-                    title = r.title.take(120)
-                    if (genre.isBlank()) genre = r.genre.take(40)
-                    if (desc.isBlank()) desc = r.description
-                    if (cover.isBlank() && r.cover.isNotBlank()) cover = r.cover
-                    if (r.hours > 0 && estSource != "manual" && estSource != "hltb") {
-                        est = fmtNum((r.hours * 2).roundToInt() / 2.0)
-                        estSource = "rawg"
+                    title = h.title.take(120)
+                    lookupTitle = h.title
+                    hltbCover = h.cover
+                    if (h.main > 0) {
+                        est = fmtNum((h.main * 2).roundToInt() / 2.0)
+                        estSource = "hltb"
                     }
-                    note = "Filled in. Check it over, then save."
+                    val times = listOfNotNull(
+                        if (h.main > 0) "${fmtHours(h.main)} main" else null,
+                        if (h.extras > 0) "${fmtHours(h.extras)} + extras" else null,
+                        if (h.completionist > 0) "${fmtHours(h.completionist)} 100%" else null,
+                    )
+                    parts += if (times.isEmpty()) "Found on HowLongToBeat, but it has no times yet."
+                    else "HowLongToBeat: " + times.joinToString(" · ")
                 }
-            } catch (e: Rawg.LookupError) {
-                note = e.message ?: "Lookup failed. Try again."
+            } catch (e: Hltb.LookupError) {
+                parts += e.message ?: "Couldn't reach HowLongToBeat."
             } catch (e: Exception) {
-                note = "Lookup failed. Check your connection and try again."
-            } finally {
-                busy = false
+                parts += "Couldn't reach HowLongToBeat. Check your connection."
             }
+
+            // Genre, description and cover from RAWG, if you've added a key.
+            if (vm.state.rawgKey.isNotBlank()) {
+                try {
+                    val r = Rawg.lookup(vm.state.rawgKey, lookupTitle)
+                    if (r == null) {
+                        parts += "Not found on RAWG."
+                    } else {
+                        if (genre.isBlank()) genre = r.genre.take(40)
+                        if (desc.isBlank()) desc = r.description
+                        if (cover.isBlank() && r.cover.isNotBlank()) cover = r.cover
+                        if (r.hours > 0 && estSource != "manual" && estSource != "hltb") {
+                            est = fmtNum((r.hours * 2).roundToInt() / 2.0)
+                            estSource = "rawg"
+                        }
+                    }
+                } catch (e: Rawg.LookupError) {
+                    parts += e.message ?: "RAWG lookup failed."
+                } catch (e: Exception) {
+                    parts += "RAWG lookup failed."
+                }
+            }
+            if (cover.isBlank() && hltbCover.isNotBlank()) cover = hltbCover
+
+            parts += "Check it over, then save."
+            note = parts.joinToString("\n")
+            busy = false
         }
     }
 
@@ -211,14 +246,12 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                     label = { Text("Title") }, singleLine = true, colors = bqFieldColors(),
                     modifier = Modifier.weight(1f),
                 )
-                if (vm.state.rawgKey.isNotBlank()) {
-                    PixelButton("AUTO-FILL", kind = BtnKind.B, enabled = !busy) { autoFill() }
-                }
+                PixelButton("AUTO-FILL", kind = BtnKind.B, enabled = !busy) { autoFill() }
             }
             Hint(
                 note.ifBlank {
-                    if (vm.state.rawgKey.isNotBlank()) "Type a title and tap Auto-fill for genre, description, cover and a time estimate."
-                    else "Add a free RAWG key in Setup to auto-fill game details."
+                    if (vm.state.rawgKey.isNotBlank()) "Type a title and tap Auto-fill for the HowLongToBeat time, genre, description and cover."
+                    else "Type a title and tap Auto-fill for the HowLongToBeat time. Add a free RAWG key in Setup for genre and description too."
                 },
             )
 

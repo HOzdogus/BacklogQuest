@@ -129,7 +129,8 @@ fun SetupScreen(vm: BacklogViewModel) {
             Panel {
                 SectionTitle("AUTO-FILL")
                 Hint(
-                    "Auto-fill looks games up on RAWG, a free game database. Get a free API key at " +
+                    "Auto-fill gets times to beat from HowLongToBeat with no setup. For genre, description " +
+                        "and covers it also uses RAWG, a free game database: get a free API key at " +
                         "rawg.io/apidocs and paste it here.",
                 )
                 OutlinedTextField(
