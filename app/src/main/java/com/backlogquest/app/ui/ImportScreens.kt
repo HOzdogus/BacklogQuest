@@ -67,6 +67,7 @@ fun StoreImportDialog(vm: BacklogViewModel, store: GameStore, onDismiss: () -> U
     var items by remember { mutableStateOf(listOf<ImportItem>()) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var gotResult by remember { mutableStateOf(false) }
+    var stuck by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun onResult(result: String) {
@@ -112,14 +113,25 @@ fun StoreImportDialog(vm: BacklogViewModel, store: GameStore, onDismiss: () -> U
                             "the app only reads your list of games. Use email and password: " +
                             "\"Sign in with Google/Apple\" buttons don't work inside apps.",
                     )
+                    if (signIn.tip.isNotBlank()) Text(signIn.tip, color = BQ.B, fontSize = 13.sp)
+                    if (stuck.isNotBlank()) Text(stuck, color = BQ.CoolFg, fontSize = 13.sp)
                     AndroidView(
-                        factory = { ctx -> signInWebView(ctx, signIn) { r -> onResult(r) }.also { webView = it } },
+                        factory = { ctx ->
+                            signInWebView(
+                                ctx, signIn,
+                                onResult = { r -> onResult(r) },
+                                onStuck = { msg -> stuck = msg },
+                            ).also { webView = it }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PixelButton("I'VE SIGNED IN", kind = BtnKind.B) { webView?.loadUrl(signIn.retryUrl) }
+                        PixelButton("I'VE SIGNED IN", kind = BtnKind.B) {
+                            stuck = ""
+                            webView?.loadUrl(signIn.retryUrl)
+                        }
                         Hint("Tap this if nothing happens after signing in.", Modifier.weight(1f))
                     }
                 }
@@ -149,11 +161,16 @@ fun StoreImportDialog(vm: BacklogViewModel, store: GameStore, onDismiss: () -> U
 
 /** The browser window used to sign in. Watches pages for the code/token that means you're in. */
 @SuppressLint("SetJavaScriptEnabled")
-private fun signInWebView(ctx: android.content.Context, signIn: StoreSignIn, onResult: (String) -> Unit): WebView {
+private fun signInWebView(
+    ctx: android.content.Context,
+    signIn: StoreSignIn,
+    onResult: (String) -> Unit,
+    onStuck: (String) -> Unit,
+): WebView {
     val web = WebView(ctx)
     var sentToLogin = false
     var sawSignInPage = false
-    var tries = 0
+    var fetchedAfterSignIn = false
 
     fun readPage(view: WebView, url: String) {
         view.evaluateJavascript(signIn.pageScript) { raw ->
@@ -163,24 +180,25 @@ private fun signInWebView(ctx: android.content.Context, signIn: StoreSignIn, onR
                 ""
             }
             val result = signIn.resultFromText(text)
+            val login = signIn.loginUrl
             when {
                 result != null -> onResult(result)
-                signIn.store == GameStore.PLAYSTATION && url.startsWith(StoreSignIn.PSN_SSO) && !sentToLogin -> {
-                    // Not signed in yet: go to the PlayStation sign-in.
+                // The token page says you're not signed in yet: go to the sign-in page.
+                login != null && !sentToLogin -> {
                     sentToLogin = true
-                    view.loadUrl("https://my.playstation.com/")
+                    view.loadUrl(login)
                 }
-                signIn.store == GameStore.STEAM && tries < 3 -> {
-                    tries++
-                    view.postDelayed({ readPage(view, url) }, 1500)
-                }
+                else -> onStuck(
+                    "Couldn't get your ${signIn.store.label} sign-in. If you've signed in, tap I've signed in. " +
+                        "If this keeps happening, tell Claude what the page shows.",
+                )
             }
         }
     }
 
     web.settings.javaScriptEnabled = true
     web.settings.domStorageEnabled = true
-    web.settings.userAgentString = StoreSignIn.DESKTOP_UA
+    signIn.userAgent?.let { web.settings.userAgentString = it }
     web.settings.loadWithOverviewMode = true
     web.settings.useWideViewPort = true
     web.settings.builtInZoomControls = true
@@ -213,18 +231,17 @@ private fun signInWebView(ctx: android.content.Context, signIn: StoreSignIn, onR
                 onResult(it)
                 return
             }
-            if (signIn.store == GameStore.PLAYSTATION) {
-                if (u.contains("account.sony.com") && (u.contains("signin") || u.contains("login"))) sawSignInPage = true
-                // Back on PlayStation after signing in: fetch the sign-in token.
-                if (sentToLogin && sawSignInPage && u.contains("playstation.com") && !u.contains("account.sony.com")) {
-                    view.loadUrl(StoreSignIn.PSN_SSO)
-                    return
-                }
+            if (signIn.isSignInPage(u)) {
+                sawSignInPage = true
+                fetchedAfterSignIn = false
             }
-            if (signIn.wantsPageText(u)) {
-                tries = 0
-                readPage(view, u)
+            // Back on the store's site after signing in: fetch the token page.
+            if (sawSignInPage && !fetchedAfterSignIn && signIn.isBackOnSite(u)) {
+                fetchedAfterSignIn = true
+                view.loadUrl(signIn.retryUrl)
+                return
             }
+            if (signIn.wantsPageText(u)) readPage(view, u)
         }
     }
     web.loadUrl(signIn.startUrl)

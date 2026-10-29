@@ -120,6 +120,11 @@ class StoreSignIn(val store: GameStore) {
         val EPIC_REDIRECT = "https://www.epicgames.com/id/api/redirect?clientId=$EPIC_CLIENT&responseType=code"
 
         const val PSN_SSO = "https://ca.account.sony.com/api/v1/ssocookie"
+        const val PSN_HOME = "https://www.playstation.com/en-gb/"
+
+        // Signed-in Steam store pages can hand out a Web API token for your account.
+        const val STEAM_CONFIG = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
+        val STEAM_LOGIN = "https://store.steampowered.com/login/?redir=${Http.enc("pointssummary/ajaxgetasyncconfig")}"
 
         const val XBOX_CLIENT = "000000004C12AE6F"
         const val XBOX_REDIRECT = "https://login.live.com/oauth20_desktop.srf"
@@ -136,10 +141,22 @@ class StoreSignIn(val store: GameStore) {
         .digest(amazonVerifier.toByteArray(Charsets.US_ASCII))
         .let { Base64.encodeToString(it, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING) }
 
+    /**
+     * Only Epic needs to see a desktop browser. Other stores' bot checks (GOG's
+     * Cloudflare in particular) can show a blank page if the browser pretends.
+     */
+    val userAgent: String? = if (store == GameStore.EPIC) DESKTOP_UA else null
+
+    /** Extra help shown above the sign-in page. */
+    val tip: String = when (store) {
+        GameStore.PLAYSTATION -> "Tap Sign In at the top of the PlayStation page. Already signed in? Tap I've signed in."
+        else -> ""
+    }
+
     val startUrl: String = when (store) {
-        GameStore.STEAM -> "https://steamcommunity.com/my/games/?tab=all"
+        GameStore.STEAM -> STEAM_LOGIN
         GameStore.GOG -> "https://auth.gog.com/auth?client_id=$GOG_CLIENT&redirect_uri=${Http.enc(GOG_REDIRECT)}" +
-            "&response_type=code&layout=client2"
+            "&response_type=code&layout=galaxy"
         GameStore.EPIC -> "https://www.epicgames.com/id/login?redirectUrl=${Http.enc(EPIC_REDIRECT)}"
         GameStore.AMAZON -> "https://www.amazon.com/ap/signin?" + listOf(
             "openid.ns" to "http://specs.openid.net/auth/2.0",
@@ -159,7 +176,7 @@ class StoreSignIn(val store: GameStore) {
             "pageId" to "amzn_sonic_games_launcher",
             "openid.oa2.code_challenge" to amazonChallenge,
         ).joinToString("&") { (k, v) -> "${Http.enc(k)}=${Http.enc(v)}" }
-        GameStore.PLAYSTATION -> PSN_SSO
+        GameStore.PLAYSTATION -> PSN_HOME
         GameStore.XBOX -> "https://login.live.com/oauth20_authorize.srf?client_id=$XBOX_CLIENT" +
             "&redirect_uri=${Http.enc(XBOX_REDIRECT)}&response_type=token&display=touch" +
             "&scope=${Http.enc("service::user.auth.xboxlive.com::MBI_SSL")}&locale=en"
@@ -167,6 +184,7 @@ class StoreSignIn(val store: GameStore) {
 
     /** Where "I've signed in" sends the window to look for the result again. */
     val retryUrl: String = when (store) {
+        GameStore.STEAM -> STEAM_CONFIG
         GameStore.PLAYSTATION -> PSN_SSO
         GameStore.EPIC -> EPIC_REDIRECT
         else -> startUrl
@@ -174,24 +192,35 @@ class StoreSignIn(val store: GameStore) {
 
     /** Pages whose text holds the answer (read with JavaScript once loaded). */
     fun wantsPageText(url: String): Boolean = when (store) {
-        GameStore.STEAM -> Regex("steamcommunity\\.com/(id|profiles)/[^/]+/games").containsMatchIn(url)
+        GameStore.STEAM -> url.contains("ajaxgetasyncconfig")
         GameStore.EPIC -> url.startsWith("https://www.epicgames.com/id/api/redirect")
         GameStore.PLAYSTATION -> url.startsWith(PSN_SSO)
         else -> false
     }
 
     /** JavaScript that returns the text we need from those pages. */
-    val pageScript: String = when (store) {
-        // Steam's games page keeps the whole list in a data attribute (older pages: a script variable).
-        GameStore.STEAM -> """
-            (function(){
-              var t = document.querySelector('[data-profile-gameslist]');
-              if (t) return t.getAttribute('data-profile-gameslist');
-              var m = document.documentElement.innerHTML.match(/var rgGames = (\[.*?\]);/);
-              return m ? m[1] : '';
-            })()
-        """.trimIndent()
-        else -> "document.body ? document.body.innerText : ''"
+    val pageScript: String = "document.body ? document.body.innerText : ''"
+
+    /** A store sign-in page (so we know you've been through sign-in). */
+    fun isSignInPage(url: String): Boolean = when (store) {
+        GameStore.STEAM -> url.contains("/login")
+        GameStore.PLAYSTATION -> url.contains("account.sony.com") && !url.startsWith(PSN_SSO)
+        else -> false
+    }
+
+    /** Back on the store's normal site after signing in: time to fetch the token. */
+    fun isBackOnSite(url: String): Boolean = when (store) {
+        GameStore.STEAM -> (url.contains("store.steampowered.com") || url.contains("steamcommunity.com")) &&
+            !url.contains("/login") && !url.contains("ajaxgetasyncconfig")
+        GameStore.PLAYSTATION -> url.contains("playstation.com") && !url.contains("account.sony.com")
+        else -> false
+    }
+
+    /** Where to send you if the token page says you're not signed in yet. */
+    val loginUrl: String? = when (store) {
+        GameStore.STEAM -> STEAM_LOGIN
+        GameStore.PLAYSTATION -> PSN_HOME
+        else -> null
     }
 
     /**
@@ -216,7 +245,9 @@ class StoreSignIn(val store: GameStore) {
 
     /** Turns page text into a result, or null if this page doesn't have it yet. */
     fun resultFromText(text: String): String? = when (store) {
-        GameStore.STEAM -> text.takeIf { it.isNotBlank() && (it.contains("rgGames") || it.trimStart().startsWith("[")) }
+        GameStore.STEAM -> try {
+            JSONObject(text).optJSONObject("data")?.optString("webapi_token")?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) { null }
         GameStore.EPIC -> try {
             JSONObject(text).optString("authorizationCode").takeIf { it.isNotBlank() && it != "null" }
         } catch (e: Exception) { null }
@@ -244,18 +275,25 @@ object StoreFetch {
 
     // ---------- Steam ----------
 
-    private fun steam(text: String): List<ImportItem> {
-        val trimmed = text.trim()
-        val games = if (trimmed.startsWith("[")) JSONArray(trimmed) else JSONObject(trimmed).optJSONArray("rgGames")
-            ?: throw ImportError("Couldn't read your Steam games page.")
+    private fun steam(token: String): List<ImportItem> {
+        // The token is a JWT whose "sub" field is your SteamID.
+        val steamId = try {
+            val part = token.split(".")[1]
+            JSONObject(String(Base64.decode(part, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP))).optString("sub")
+        } catch (e: Exception) {
+            ""
+        }.ifBlank { throw ImportError("Steam signed you in but didn't say which account. Try again.") }
+
+        val j = Http.json(
+            "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?access_token=${Http.enc(token)}" +
+                "&steamid=$steamId&include_appinfo=true&include_played_free_games=true",
+        )
+        val games = j.optJSONObject("response")?.optJSONArray("games")
+            ?: throw ImportError("Steam didn't return any games. Is your library empty?")
         return (0 until games.length()).mapNotNull { i ->
             val g = games.optJSONObject(i) ?: return@mapNotNull null
             val name = g.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            // Older pages give "hours_forever" as text; newer ones give minutes.
-            val minutes = g.optDouble("playtime_forever", Double.NaN)
-            val hours = if (!minutes.isNaN()) minutes / 60.0
-            else g.optString("hours_forever").replace(",", "").toDoubleOrNull() ?: 0.0
-            ImportItem(name, "PC", "Steam", hours = hours)
+            ImportItem(name, "PC", "Steam", hours = g.optDouble("playtime_forever", 0.0) / 60.0)
         }
     }
 
@@ -268,15 +306,39 @@ object StoreFetch {
                 "&grant_type=authorization_code&code=${Http.enc(code)}&redirect_uri=${Http.enc(StoreSignIn.GOG_REDIRECT)}",
         ).optString("access_token").ifBlank { throw ImportError("GOG didn't accept the sign-in. Try again.") }
 
+        val auth = mapOf("Authorization" to "Bearer $token")
+
+        // Your owned product IDs, then their names (50 at a time), as GOG Galaxy does.
+        onProgress("Reading your GOG library…")
+        val owned = try {
+            Http.json("https://embed.gog.com/user/data/games", headers = auth).optJSONArray("owned")
+        } catch (e: Exception) {
+            null
+        }
         val out = mutableListOf<ImportItem>()
+        if (owned != null && owned.length() > 0) {
+            val ids = (0 until owned.length()).map { owned.opt(it).toString() }.distinct()
+            for ((n, chunk) in ids.chunked(50).withIndex()) {
+                onProgress("Looking up GOG games (${minOf((n + 1) * 50, ids.size)} of ${ids.size})…")
+                val r = Http.call("https://api.gog.com/products?ids=${chunk.joinToString(",")}")
+                if (r.code !in 200..299) continue
+                val arr = try { JSONArray(r.body) } catch (e: Exception) { continue }
+                for (i in 0 until arr.length()) {
+                    val p = arr.optJSONObject(i) ?: continue
+                    val type = p.optString("game_type")
+                    if (type.isNotBlank() && type != "game") continue // skip DLC and packs
+                    p.optString("title").takeIf { it.isNotBlank() }?.let { out += ImportItem(it, "PC", "GOG") }
+                }
+            }
+        }
+        if (out.isNotEmpty()) return out
+
+        // Fallback: the account page's product list.
         var page = 1
         var totalPages = 1
         do {
             onProgress("Reading your GOG library (page $page of $totalPages)…")
-            val j = Http.json(
-                "https://embed.gog.com/account/getFilteredProducts?mediaType=1&page=$page",
-                headers = mapOf("Authorization" to "Bearer $token"),
-            )
+            val j = Http.json("https://embed.gog.com/account/getFilteredProducts?mediaType=1&page=$page", headers = auth)
             totalPages = j.optInt("totalPages", 1)
             val products = j.optJSONArray("products") ?: JSONArray()
             for (i in 0 until products.length()) {
@@ -286,6 +348,7 @@ object StoreFetch {
             }
             page++
         } while (page <= totalPages && page < 100)
+        if (out.isEmpty()) throw ImportError("GOG signed you in but didn't list any games.")
         return out
     }
 
