@@ -22,7 +22,7 @@ object Achievements {
     const val XBOX = "TrueAchievements"
     val SOURCES = listOf(STEAM, RA, PSN, XBOX)
 
-    class Found(val title: String, val list: List<Achievement>)
+    class Found(val title: String, val list: List<Trophy>)
     class AchError(message: String) : Exception(message)
 
     /** Picks where to look, from the game's platform (or device) and store. */
@@ -48,7 +48,7 @@ object Achievements {
         }
 
     /** Keeps your ticks when a list is refreshed. */
-    fun mergeEarned(old: List<Achievement>, new: List<Achievement>): List<Achievement> {
+    fun mergeEarned(old: List<Trophy>, new: List<Trophy>): List<Trophy> {
         val earned = old.filter { it.earned }.map { it.name.lowercase() }.toSet()
         return new.map { if (it.earned || it.name.lowercase() in earned) it.copy(earned = true) else it }
     }
@@ -72,7 +72,7 @@ object Achievements {
         val rows = Regex("""<h3>(.*?)</h3>\s*<h5>(.*?)</h5>""", RegexOption.DOT_MATCHES_ALL).findAll(page.body)
         val percents = Regex("""achievePercent">\s*([\d.]+)%""").findAll(page.body).map { it.groupValues[1] }.toList()
         val list = rows.mapIndexed { i, m ->
-            Achievement(
+            Trophy(
                 name = clean(m.groupValues[1]),
                 desc = clean(m.groupValues[2]),
                 kind = percents.getOrNull(i)?.let { "$it% of players" } ?: "",
@@ -172,7 +172,7 @@ object Achievements {
             .sortedBy { it.optInt("DisplayOrder", 0) }
             .map { a ->
                 val earned = listOf("DateEarned", "DateEarnedHardcore").any { k -> !a.isNull(k) && a.optString(k).isNotBlank() }
-                Achievement(a.optString("Title"), a.optString("Description"), "${a.optInt("Points")} pts", earned)
+                Trophy(a.optString("Title"), a.optString("Description"), "${a.optInt("Points")} pts", earned)
             }.toList()
         if (list.isEmpty()) throw AchError("This game has no RetroAchievements yet.")
         Found(game.optString("Title"), list)
@@ -233,7 +233,7 @@ object Achievements {
         ) ?: throw AchError("Couldn't load the trophy list from PSNProfiles.")
         val arr = JSONArray(page)
         val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-            .map { Achievement(it.optString("n"), it.optString("d"), it.optString("k")) }
+            .map { Trophy(it.optString("n"), it.optString("d"), it.optString("k")) }
         if (list.isEmpty()) throw AchError("PSNProfiles didn't list any trophies for this game.")
         return Found(pick.optString("t"), list)
     }
@@ -287,7 +287,7 @@ object Achievements {
         ) ?: throw AchError("Couldn't load the achievement list from TrueAchievements.")
         val arr = JSONArray(page)
         val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-            .map { Achievement(it.optString("n"), it.optString("d"), it.optString("k")) }
+            .map { Trophy(it.optString("n"), it.optString("d"), it.optString("k")) }
         if (list.isEmpty()) throw AchError("TrueAchievements didn't list any achievements for this game.")
         return Found(pick.optString("t").ifBlank { title }, list)
     }

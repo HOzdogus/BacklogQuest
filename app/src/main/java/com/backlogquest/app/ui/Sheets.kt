@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
 import com.backlogquest.app.data.Hltb
-import com.backlogquest.app.data.Achievement
+import com.backlogquest.app.data.Trophy
 import com.backlogquest.app.data.Achievements
 import com.backlogquest.app.data.Prices
 import com.backlogquest.app.data.deviceName
@@ -485,7 +485,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
 /** The full achievement / trophy list, with ticks for the ones you've earned. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AchievementList(list: List<Achievement>, source: String, onToggle: (Int) -> Unit, onDismiss: () -> Unit) {
+private fun AchievementList(list: List<Trophy>, source: String, onToggle: (Int) -> Unit, onDismiss: () -> Unit) {
     var leftOnly by remember { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,

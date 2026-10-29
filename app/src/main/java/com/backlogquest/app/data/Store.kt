@@ -161,7 +161,7 @@ object Store {
                 achievements = o.optJSONArray("achievements")?.let { a ->
                     (0 until a.length()).mapNotNull { j ->
                         val x = a.optJSONObject(j) ?: return@mapNotNull null
-                        Achievement(x.optString("n"), x.optString("d"), x.optString("k"), x.optBoolean("e", false))
+                        Trophy(x.optString("n"), x.optString("d"), x.optString("k"), x.optBoolean("e", false))
                     }
                 } ?: emptyList(),
             )

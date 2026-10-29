@@ -41,13 +41,13 @@ data class Game(
     /** Store it was imported from, e.g. "Steam". Empty if added by hand. */
     val source: String = "",
     /** The game's full achievement/trophy list, found by Auto-fill. */
-    val achievements: List<Achievement> = emptyList(),
+    val achievements: List<Trophy> = emptyList(),
     /** Where that list came from: "Steam", "RetroAchievements", "PSNProfiles" or "TrueAchievements". */
     val achSource: String = "",
 )
 
 /** One achievement or trophy. kind is e.g. "Gold", "10 pts" or "". */
-data class Achievement(
+data class Trophy(
     val name: String,
     val desc: String = "",
     val kind: String = "",
