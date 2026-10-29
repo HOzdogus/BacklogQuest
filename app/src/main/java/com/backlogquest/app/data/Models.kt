@@ -50,6 +50,8 @@ data class Game(
      * its number and date, and isn't counted a second time.
      */
     val histKey: String = "",
+    /** Your screenshots: image files saved inside the app. */
+    val screenshots: List<String> = emptyList(),
 )
 
 /** One achievement or trophy. kind is e.g. "Gold", "10 pts" or "". */

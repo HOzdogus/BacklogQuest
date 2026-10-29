@@ -148,6 +148,22 @@ class BacklogViewModel(app: Application) : AndroidViewModel(app) {
         showToast("GAMES REPLACED\nfrom your data file")
     }
 
+    /** Copies picked screenshots into the app. Returns the saved paths, in the order picked. */
+    suspend fun importScreenshots(uris: List<Uri>): List<String> = withContext(Dispatchers.IO) {
+        val folder = File(dir, "screenshots").apply { mkdirs() }
+        uris.mapNotNull { uri ->
+            try {
+                val out = File(folder, "${newId()}.img")
+                getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
+                    out.outputStream().use { input.copyTo(it) }
+                } ?: return@mapNotNull null
+                out.absolutePath
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
     /** Copies a picked image into the app so it keeps working. Returns its path. */
     suspend fun importCover(uri: Uri): String? = withContext(Dispatchers.IO) {
         try {

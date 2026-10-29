@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -111,10 +115,23 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
     var showAchievements by remember(target) { mutableStateOf(false) }
     var achBusy by remember(target) { mutableStateOf(false) }
     var achNote by remember(target) { mutableStateOf("") }
+    var shots by remember(target) { mutableStateOf(start.screenshots) }
+    var viewing by remember(target) { mutableStateOf<Int?>(null) }
+    var shotNote by remember(target) { mutableStateOf("") }
     val ctx = LocalContext.current
 
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val shotPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(30)) { uris ->
+        if (uris.isNotEmpty()) {
+            shotNote = "Adding ${uris.size} screenshot${if (uris.size == 1) "" else "s"}…"
+            scope.launch {
+                val added = vm.importScreenshots(uris)
+                shots = shots + added
+                shotNote = if (added.size == uris.size) "Added. Save to keep them." else "Added ${added.size} of ${uris.size}. Save to keep them."
+            }
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             coverNote = "Adding cover…"
@@ -239,6 +256,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             series = series.trim(), desc = desc.trim(), platform = platform.trim(),
             estSource = if (estNum > 0) estSource.ifBlank { "manual" } else "",
             cover = cover,
+            screenshots = shots,
             achievements = achievements,
             achSource = if (achievements.isEmpty()) "" else achSource,
         )
@@ -253,6 +271,8 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         // Tidy up a cover image we replaced.
         val oldCover = existing?.cover.orEmpty()
         if (oldCover.startsWith("/") && oldCover != saved.cover) File(oldCover).delete()
+        // ...and screenshots you removed.
+        existing?.screenshots.orEmpty().filter { it !in saved.screenshots }.forEach { File(it).delete() }
 
         vm.update { st ->
             if (existing != null) st.copy(games = st.games.map { if (it.id == saved.id) saved else it })
@@ -458,6 +478,38 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                 }
             }
 
+            // ---- Screenshots ----
+            if (status == "beaten" || shots.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Screenshots" + if (shots.isNotEmpty()) " (${shots.size})" else "",
+                        color = BQ.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f),
+                    )
+                    PixelButton("+ ADD", kind = BtnKind.B) {
+                        shotPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                }
+                if (shots.isEmpty()) {
+                    Hint("Add screenshots from your gallery. Tap one to view it full screen.")
+                } else {
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(shots.size) { i ->
+                            coil.compose.AsyncImage(
+                                model = File(shots[i]),
+                                contentDescription = "Screenshot ${i + 1}",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier
+                                    .height(96.dp)
+                                    .width(170.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                    .clickable { viewing = i },
+                            )
+                        }
+                    }
+                }
+                if (shotNote.isNotBlank()) Hint(shotNote)
+            }
+
             if (status == "beaten") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -494,6 +546,19 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         }
     }
 
+    viewing?.let { start ->
+        ScreenshotViewer(
+            shots = shots,
+            startAt = start,
+            onDelete = { i ->
+                shots = shots.filterIndexed { j, _ -> j != i }
+                shotNote = "Screenshot removed. Save to confirm."
+                if (shots.isEmpty()) viewing = null
+            },
+            onDismiss = { viewing = null },
+        )
+    }
+
     if (showAchievements) {
         AchievementList(
             list = achievements,
@@ -501,6 +566,46 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             onToggle = { i -> achievements = achievements.mapIndexed { j, a -> if (j == i) a.copy(earned = !a.earned) else a } },
             onDismiss = { showAchievements = false },
         )
+    }
+}
+
+/** Full-screen screenshots: swipe between them, delete the one you're on. */
+@Composable
+private fun ScreenshotViewer(shots: List<String>, startAt: Int, onDelete: (Int) -> Unit, onDismiss: () -> Unit) {
+    val pager = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = startAt.coerceIn(0, (shots.size - 1).coerceAtLeast(0)),
+    ) { shots.size }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(androidx.compose.ui.graphics.Color.Black)
+                .padding(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${pager.currentPage + 1} / ${shots.size}",
+                    color = BQ.Ink, fontFamily = BQ.Mono, modifier = Modifier.weight(1f),
+                )
+                PixelButton("DELETE") { onDelete(pager.currentPage) }
+                Spacer(Modifier.width(8.dp))
+                PixelButton("CLOSE", kind = BtnKind.B, onClick = onDismiss)
+            }
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.foundation.pager.HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { i ->
+                coil.compose.AsyncImage(
+                    model = File(shots[i]),
+                    contentDescription = "Screenshot ${i + 1}",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 200.dp, max = 640.dp),
+                )
+            }
+        }
     }
 }
 
