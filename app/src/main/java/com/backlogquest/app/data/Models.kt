@@ -38,6 +38,8 @@ data class Game(
     val cover: String = "",
     /** The system the game is for (e.g. PS2), when that's not the device you play it on. Empty = same. */
     val platform: String = "",
+    /** Store it was imported from, e.g. "Steam". Empty if added by hand. */
+    val source: String = "",
 )
 
 /** Everything you can change in the app. Saved on the phone. */

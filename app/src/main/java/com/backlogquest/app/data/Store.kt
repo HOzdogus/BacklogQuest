@@ -88,7 +88,7 @@ object Store {
         put("genre", g.genre); put("series", g.series); put("desc", g.desc)
         put("est", g.est); put("estSource", g.estSource); put("hours", g.hours)
         put("beatenAt", g.beatenAt); put("addedAt", g.addedAt); put("order", g.order)
-        put("cover", g.cover); put("platform", g.platform)
+        put("cover", g.cover); put("platform", g.platform); put("source", g.source)
     }
 
     private fun parseDevices(a: JSONArray?): List<Device> {
@@ -122,6 +122,7 @@ object Store {
                 order = if (o.has("order") && !o.isNull("order")) o.optLong("order", 0L) else 0L,
                 cover = o.str("cover"),
                 platform = o.str("platform"),
+                source = o.str("source"),
             )
         }
     }

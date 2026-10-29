@@ -1,6 +1,10 @@
 package com.backlogquest.app.ui
 
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,11 +28,14 @@ import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.DEFAULT_DATA_URL
 import com.backlogquest.app.data.Device
+import com.backlogquest.app.data.Store
 import com.backlogquest.app.data.fmtDate
 import com.backlogquest.app.data.newId
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetupScreen(vm: BacklogViewModel) {
+    var importing by remember { mutableStateOf<Store?>(null) }
     val s = vm.state
     var baselineText by remember { mutableStateOf(if (s.baseline > 0) s.baseline.toString() else "") }
     var urlText by remember { mutableStateOf(s.dataUrl) }
@@ -149,6 +156,25 @@ fun SetupScreen(vm: BacklogViewModel) {
 
         item {
             Panel {
+                SectionTitle("IMPORT FROM STORES")
+                Hint(
+                    "Sign in to a store to add your games to your backlog. You pick which ones before " +
+                        "anything is added, and games already in your lists or history are skipped. " +
+                        "PlayStation and Xbox list the games you've bought or played.",
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Store.values().forEach { st -> PixelButton(st.label.uppercase(), kind = BtnKind.B) { importing = st } }
+                }
+                PixelButton("SIGN OUT OF ALL STORES") {
+                    CookieManager.getInstance().removeAllCookies(null)
+                    WebStorage.getInstance().deleteAllData()
+                    vm.showToast("Signed out of all stores")
+                }
+            }
+        }
+
+        item {
+            Panel {
                 SectionTitle("DEVICES")
                 Hint("Exempt devices never go on cooldown and don't count toward the two-for-two rule.")
                 s.devices.forEach { d ->
@@ -173,6 +199,7 @@ fun SetupScreen(vm: BacklogViewModel) {
             }
         }
     }
+    importing?.let { st -> StoreImportDialog(vm, st) { importing = null } }
 }
 
 @Composable
