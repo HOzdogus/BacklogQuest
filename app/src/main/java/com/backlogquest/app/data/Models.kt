@@ -52,6 +52,8 @@ data class Game(
     val histKey: String = "",
     /** Your screenshots: image files saved inside the app. */
     val screenshots: List<String> = emptyList(),
+    /** How to start the game from the app (emulator or Android app), if set up. */
+    val launch: Launch? = null,
 )
 
 /** One achievement or trophy. kind is e.g. "Gold", "10 pts" or "". */

@@ -250,7 +250,7 @@ fun GamesScreen(
                             achText(g),
                         ).filter { it.isNotBlank() }.joinToString(" · ")
                     } else {
-                        listOf(playedOn(s, g), g.genre, if (g.series.isNotBlank()) "${g.series} series" else "", estText(g), achText(g))
+                        listOf(playedOn(s, g), g.genre, if (g.series.isNotBlank()) "${g.series} series" else "", estText(g), playedText(g.hours), achText(g))
                             .filter { it.isNotBlank() }.joinToString(" · ")
                     }
                     if (f.grid) {

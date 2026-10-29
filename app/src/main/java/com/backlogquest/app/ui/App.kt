@@ -106,6 +106,7 @@ fun BacklogApp(vm: BacklogViewModel) {
 
     editing?.let { target -> EditSheet(vm, target, onDismiss = { editing = null }) }
     wishOpen?.let { id -> WishSheet(vm, id, onDismiss = { wishOpen = null }) }
+    SessionDialog(vm)
 }
 
 @Composable

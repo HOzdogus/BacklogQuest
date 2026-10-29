@@ -68,6 +68,97 @@ class BacklogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun priceFor(title: String): Price? = state.prices[normTitle(title)]
 
+    // ---------------- Playing games ----------------
+
+    /** A finished play session waiting for you to confirm the time. */
+    class SessionResult(val gameId: String, val title: String, val minutes: Int, val measured: Boolean)
+
+    var sessionResult by mutableStateOf<SessionResult?>(null)
+    private var pendingPlay: String? = null
+    private val sessionPrefs get() = getApplication<Application>().getSharedPreferences("sessions", 0)
+
+    /** Starts a game and remembers the session so its play time can be added when you're back. */
+    fun play(gameId: String) {
+        if (!loaded) {
+            pendingPlay = gameId
+            return
+        }
+        val g = state.games.firstOrNull { it.id == gameId }
+        val l = g?.launch
+        if (g == null || l == null) {
+            showToast("Set up how to start this game first")
+            return
+        }
+        try {
+            val pkg = Launcher.start(getApplication(), l)
+            sessionPrefs.edit()
+                .putString("game", gameId).putString("pkg", pkg).putLong("start", System.currentTimeMillis())
+                .apply()
+        } catch (e: Launcher.LaunchError) {
+            showToast(e.message ?: "Couldn't start the game")
+        } catch (e: Exception) {
+            showToast("Couldn't start the game")
+        }
+    }
+
+    /** Called when the app comes back to the front: works out how long you played. */
+    fun checkSession() {
+        val gameId = sessionPrefs.getString("game", null) ?: return
+        val pkg = sessionPrefs.getString("pkg", "").orEmpty()
+        val start = sessionPrefs.getLong("start", 0L)
+        val now = System.currentTimeMillis()
+        if (now - start < 60_000) return // just bounced back; keep waiting
+        sessionPrefs.edit().clear().apply()
+        val measuredMs = PlayTime.foregroundMs(getApplication(), pkg, start, now)
+        val ms = measuredMs ?: (now - start)
+        val minutes = (ms / 60_000).toInt()
+        if (minutes < 1) return
+        val title = state.games.firstOrNull { it.id == gameId }?.title ?: return
+        sessionResult = SessionResult(gameId, title, minutes, measuredMs != null)
+    }
+
+    fun addPlayTime(gameId: String, minutes: Int) {
+        update { s ->
+            s.copy(games = s.games.map { g ->
+                if (g.id == gameId) g.copy(hours = Math.round((g.hours + minutes / 60.0) * 10) / 10.0) else g
+            })
+        }
+        sessionResult = null
+    }
+
+    /** Fills in hours from Steam for your games (keeps whichever is higher). */
+    fun syncSteamHours() {
+        viewModelScope.launch {
+            try {
+                val found = PlayTime.steamHours(state)
+                var changed = 0
+                update { s ->
+                    s.copy(games = s.games.map { g ->
+                        val h = found[normTitle(g.title)]
+                        if (h != null && h > g.hours + 0.05) {
+                            changed++
+                            g.copy(hours = Math.round(h * 10) / 10.0)
+                        } else g
+                    })
+                }
+                showToast("STEAM PLAY TIME\nUpdated $changed game${if (changed == 1) "" else "s"}")
+            } catch (e: PlayTime.PlayTimeError) {
+                showToast(e.message ?: "Couldn't reach Steam")
+            } catch (e: Exception) {
+                showToast("Couldn't reach Steam")
+            }
+        }
+    }
+
+    /** Adds a home-screen icon that starts the game straight away. */
+    fun addHomeIcon(gameId: String) {
+        val g = state.games.firstOrNull { it.id == gameId } ?: return
+        viewModelScope.launch {
+            val ok = Shortcuts.pin(getApplication(), g)
+            if (!ok) showToast("Your home screen doesn't allow adding icons")
+        }
+    }
+
     init {
         viewModelScope.launch {
             val (saved, file) = withContext(Dispatchers.IO) {
@@ -79,6 +170,7 @@ class BacklogViewModel(app: Application) : AndroidViewModel(app) {
                 fileState = file.state
             }
             loaded = true
+            pendingPlay?.let { pendingPlay = null; play(it) }
             // First time on this phone: fetch your data straight away.
             if (file == null) sync()
         }

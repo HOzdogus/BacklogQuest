@@ -123,6 +123,10 @@ object Store {
         put("cover", g.cover); put("platform", g.platform); put("source", g.source)
         put("achSource", g.achSource); put("histKey", g.histKey)
         put("screenshots", JSONArray().apply { g.screenshots.forEach { put(it) } })
+        g.launch?.let { l ->
+            put("launch", JSONObject().put("mode", l.mode).put("pkg", l.pkg).put("emu", l.emu)
+                .put("uri", l.uri).put("gameId", l.gameId).put("core", l.core))
+        }
         put("achievements", JSONArray().apply {
             g.achievements.forEach {
                 put(JSONObject().put("n", it.name).put("d", it.desc).put("k", it.kind).put("e", it.earned))
@@ -164,6 +168,9 @@ object Store {
                 source = o.str("source"),
                 achSource = o.str("achSource"),
                 histKey = o.str("histKey"),
+                launch = o.optJSONObject("launch")?.let { l ->
+                    Launch(l.str("mode"), l.str("pkg"), l.str("emu"), l.str("uri"), l.str("gameId"), l.str("core"))
+                },
                 screenshots = o.optJSONArray("screenshots")?.let { a ->
                     (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() }
                 } ?: emptyList(),

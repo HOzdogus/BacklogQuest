@@ -161,6 +161,40 @@ fun SetupScreen(vm: BacklogViewModel) {
 
         item {
             Panel {
+                SectionTitle("PLAY TIME")
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                var usage by remember { mutableStateOf(com.backlogquest.app.data.PlayTime.hasUsageAccess(ctx)) }
+                Hint(
+                    "Games started from Backlog Quest (the Play button or a home-screen icon) ask to add the time " +
+                        "you played when you come back. Allow Usage access so it counts only time actually spent " +
+                        "in the game or emulator.",
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (usage) "✓ Usage access allowed" else "Usage access not allowed",
+                        color = if (usage) BQ.Ok else BQ.Muted, fontSize = 14.sp, modifier = Modifier.weight(1f),
+                    )
+                    if (!usage) {
+                        PixelButton("ALLOW", kind = BtnKind.B) {
+                            ctx.startActivity(com.backlogquest.app.data.PlayTime.usageAccessIntent())
+                        }
+                    } else {
+                        PixelButton("CHECK") { usage = com.backlogquest.app.data.PlayTime.hasUsageAccess(ctx) }
+                    }
+                }
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    while (true) {
+                        kotlinx.coroutines.delay(2000)
+                        usage = com.backlogquest.app.data.PlayTime.hasUsageAccess(ctx)
+                    }
+                }
+                Hint("Steam games: copy your hours from Steam (needs your Steam key and profile below).")
+                PixelButton("SYNC STEAM PLAY TIME", kind = BtnKind.B) { vm.syncSteamHours() }
+            }
+        }
+
+        item {
+            Panel {
                 SectionTitle("ACHIEVEMENTS")
                 Hint(
                     "Steam: add your free Steam Web API key (steamcommunity.com/dev/apikey) for the most " +

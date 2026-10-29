@@ -116,6 +116,8 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
     var achBusy by remember(target) { mutableStateOf(false) }
     var achNote by remember(target) { mutableStateOf("") }
     var shots by remember(target) { mutableStateOf(start.screenshots) }
+    var launch by remember(target) { mutableStateOf(start.launch) }
+    var settingUpLaunch by remember(target) { mutableStateOf(false) }
     var viewing by remember(target) { mutableStateOf<Int?>(null) }
     var shotNote by remember(target) { mutableStateOf("") }
     val ctx = LocalContext.current
@@ -237,11 +239,12 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         }
     }
 
-    fun save() {
+    /** Saves the game and closes the sheet. Returns the saved game's id, or null if it couldn't save. */
+    fun save(): String? {
         val t = title.trim()
         if (t.isEmpty()) {
             note = "Add a title before saving."
-            return
+            return null
         }
         val before = unlocked(s, vm.ref)
         val levelBefore = totals(s, vm.ref).level
@@ -257,6 +260,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             estSource = if (estNum > 0) estSource.ifBlank { "manual" } else "",
             cover = cover,
             screenshots = shots,
+            launch = launch,
             achievements = achievements,
             achSource = if (achievements.isEmpty()) "" else achSource,
         )
@@ -298,6 +302,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             }
             vm.showToast(lines.joinToString("\n"))
         }
+        return saved.id
     }
 
     ModalBottomSheet(
@@ -398,6 +403,26 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                 label = { Text("Description") }, minLines = 2, colors = bqFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            // ---- Play / launch ----
+            if (status != "wishlist") {
+                Text("Play", color = BQ.Muted, fontSize = 12.sp)
+                val l = launch
+                if (l == null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Hint("Start this game from here with an emulator or as an Android app.", Modifier.weight(1f))
+                        PixelButton("SET UP", kind = BtnKind.B) { settingUpLaunch = true }
+                    }
+                } else {
+                    Text(launchSummary(ctx, l), color = BQ.Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PixelButton("▶ PLAY", kind = BtnKind.A) { save()?.let { id -> vm.play(id) } }
+                        PixelButton("HOME ICON", kind = BtnKind.B) { save()?.let { id -> vm.addHomeIcon(id) } }
+                        PixelButton("CHANGE") { settingUpLaunch = true }
+                    }
+                }
+                if (status != "beaten" && start.hours > 0) Hint("Played so far: ${fmtNum(start.hours)}h")
+            }
 
             // ---- Achievements ----
             Text("Achievements", color = BQ.Muted, fontSize = 12.sp)
@@ -544,6 +569,18 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                 PixelButton("SAVE", kind = BtnKind.A) { save() }
             }
         }
+    }
+
+    if (settingUpLaunch) {
+        LaunchSetupDialog(
+            current = launch,
+            platform = platform.ifBlank { deviceName(vm.state, device) },
+            onSave = { l ->
+                launch = l
+                settingUpLaunch = false
+            },
+            onDismiss = { settingUpLaunch = false },
+        )
     }
 
     viewing?.let { start ->
