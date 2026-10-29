@@ -65,6 +65,8 @@ class Filters {
 sealed class EditTarget {
     data class New(val status: String) : EditTarget()
     data class Existing(val id: String) : EditTarget()
+    /** A game from your imported history, by its position in the history list. */
+    data class History(val index: Int) : EditTarget()
 }
 
 @Composable
@@ -89,6 +91,7 @@ fun BacklogApp(vm: BacklogViewModel) {
                         vm, filters,
                         onAdd = { editing = EditTarget.New(if (filters.libTab == "beaten") "beaten" else "backlog") },
                         onEdit = { editing = EditTarget.Existing(it) },
+                        onEditHistory = { editing = EditTarget.History(it) },
                         onOpenWish = { wishOpen = it },
                     )
                     Tab.TROPHIES -> TrophiesScreen(vm)

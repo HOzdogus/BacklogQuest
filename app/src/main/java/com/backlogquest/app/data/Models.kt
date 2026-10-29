@@ -44,6 +44,12 @@ data class Game(
     val achievements: List<Trophy> = emptyList(),
     /** Where that list came from: "Steam", "RetroAchievements", "PSNProfiles" or "TrueAchievements". */
     val achSource: String = "",
+    /**
+     * Set when this is your editable copy of a game from your imported history
+     * (see [historyKey]). It then replaces that history entry everywhere, keeps
+     * its number and date, and isn't counted a second time.
+     */
+    val histKey: String = "",
 )
 
 /** One achievement or trophy. kind is e.g. "Gold", "10 pts" or "". */

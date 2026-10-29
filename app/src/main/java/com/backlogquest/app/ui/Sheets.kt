@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
 import com.backlogquest.app.data.Hltb
+import com.backlogquest.app.data.historyKey
 import com.backlogquest.app.data.Trophy
 import com.backlogquest.app.data.Achievements
 import com.backlogquest.app.data.Prices
@@ -62,13 +63,29 @@ import kotlin.math.roundToInt
 @Composable
 fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
     val s = vm.state
-    val existing = (target as? EditTarget.Existing)?.let { t -> s.games.firstOrNull { it.id == t.id } }
-    if (target is EditTarget.Existing && existing == null) {
+    // A game from your imported history: edit your copy if you've made one, otherwise start one.
+    val histIndex = (target as? EditTarget.History)?.index
+    val histEntry = histIndex?.let { vm.ref.history.getOrNull(it) }
+    val histKey = if (histIndex != null && histEntry != null) historyKey(histIndex, histEntry) else ""
+    val existing = when (target) {
+        is EditTarget.Existing -> s.games.firstOrNull { it.id == target.id }
+        is EditTarget.History -> s.games.firstOrNull { histKey.isNotEmpty() && it.histKey == histKey }
+        else -> null
+    }
+    if ((target is EditTarget.Existing && existing == null) || (target is EditTarget.History && histEntry == null)) {
         LaunchedEffect(Unit) { onDismiss() }
         return
     }
     val newStatus = (target as? EditTarget.New)?.status ?: "backlog"
-    val start = existing ?: Game(
+    val start = existing ?: if (histEntry != null) {
+        // Match the history platform to one of your devices if possible.
+        val dev = s.devices.firstOrNull { it.name.equals(histEntry.platform, ignoreCase = true) } ?: s.devices.first()
+        Game(
+            id = "", title = histEntry.title, device = dev.id, status = "beaten",
+            platform = if (histEntry.platform.equals(dev.name, ignoreCase = true)) "" else histEntry.platform,
+            beatenAt = histEntry.date, histKey = histKey,
+        )
+    } else Game(
         id = "", title = "", device = s.devices.first().id, status = newStatus, beatenAt = today(),
     )
 
@@ -215,7 +232,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         val estNum = est.toDoubleOrNull() ?: 0.0
         val baseGame = existing ?: Game(
             id = newId(), title = t, device = device, status = status,
-            addedAt = today(), order = System.currentTimeMillis(),
+            addedAt = today(), order = System.currentTimeMillis(), histKey = start.histKey,
         )
         var rec = baseGame.copy(
             title = t, device = device, status = status, genre = genre.trim(), est = estNum,
@@ -243,7 +260,7 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
         }
         onDismiss()
 
-        if (saved.status == "beaten" && !wasBeaten) {
+        if (saved.status == "beaten" && !wasBeaten && saved.histKey.isEmpty()) {
             val ns = vm.state
             val fresh = unlocked(ns, vm.ref).filter { it !in before }
             val level = totals(ns, vm.ref).level
@@ -277,7 +294,13 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                 .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionTitle(if (existing != null) "EDIT GAME" else "ADD A GAME")
+            SectionTitle(if (existing != null || histEntry != null) "EDIT GAME" else "ADD A GAME")
+            if (start.histKey.isNotEmpty()) {
+                Hint(
+                    "From your HowLongToBeat history. Saving keeps your own copy with the details you add; " +
+                        "its number and date stay the same." + if (existing != null) " Delete it to go back to the original." else "",
+                )
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(

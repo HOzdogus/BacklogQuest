@@ -103,10 +103,21 @@ fun knownPlatforms(s: AppState): List<String> =
 fun isExempt(s: AppState, id: String): Boolean =
     s.devices.firstOrNull { it.id == id }?.exempt ?: false
 
-/** Your beaten games in the order you beat them. */
+/** Your beaten games in the order you beat them (not counting edited copies of history games). */
 fun beaten(s: AppState): List<Game> =
-    s.games.filter { it.status == "beaten" }
+    s.games.filter { it.status == "beaten" && it.histKey.isEmpty() }
         .sortedWith(compareBy<Game>({ it.beatenAt }, { it.order }))
+
+/** Identifies one entry in your imported history. */
+fun historyKey(index: Int, c: Completion): String = "$index:${normTitle(c.title)}"
+
+/** Your edited copies of history games, by history key. */
+fun historyEdits(s: AppState): Map<String, Game> =
+    s.games.filter { it.histKey.isNotEmpty() }.associateBy { it.histKey }
+
+/** "12/45" achievements earned, or "" if the game has no list yet. */
+fun achText(g: Game): String =
+    if (g.achievements.isEmpty()) "" else "🏆 ${g.achievements.count { it.earned }}/${g.achievements.size}"
 
 fun gameXp(g: Game): Int = 100 + min(200, (g.hours * 4).roundToInt())
 
@@ -123,7 +134,11 @@ data class Totals(
 
 /** Every completion: imported history first, then games beaten in the app. */
 fun allDone(s: AppState, ref: RefData): List<Completion> =
-    ref.history + beaten(s).map { Completion(it.title, it.platform.ifBlank { deviceName(s, it.device) }, it.beatenAt) }
+    historyEdits(s).let { edits ->
+        ref.history.mapIndexed { i, c ->
+            edits[historyKey(i, c)]?.let { g -> c.copy(platform = g.platform.ifBlank { c.platform }) } ?: c
+        }
+    } + beaten(s).map { Completion(it.title, it.platform.ifBlank { deviceName(s, it.device) }, it.beatenAt) }
 
 fun totals(s: AppState, ref: RefData): Totals {
     val b = beaten(s)
@@ -146,6 +161,7 @@ fun totals(s: AppState, ref: RefData): Totals {
 
 /** The number this game got when you beat it, counting your whole history. */
 fun numberOf(s: AppState, ref: RefData, g: Game): Int? {
+    if (g.histKey.isNotEmpty()) return g.histKey.substringBefore(":").toIntOrNull()?.let { s.baseline + it + 1 }
     val i = beaten(s).indexOfFirst { it.id == g.id }
     return if (i < 0) null else s.baseline + ref.history.size + i + 1
 }

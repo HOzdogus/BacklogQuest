@@ -28,6 +28,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.playedOn
+import com.backlogquest.app.data.achText
+import com.backlogquest.app.data.historyKey
+import com.backlogquest.app.data.historyEdits
 import com.backlogquest.app.data.Prices
 import com.backlogquest.app.data.normTitle
 import com.backlogquest.app.data.AppState
@@ -50,7 +53,7 @@ import com.backlogquest.app.data.wishTagOk
 /** One row in the Games list: your game, an imported completion, or a wishlist game. */
 private sealed class LibItem(val key: String) {
     class Own(val g: Game, val number: Int?) : LibItem("g:${g.id}")
-    class Hist(val c: Completion, val number: Int, index: Int) : LibItem("h:$index")
+    class Hist(val c: Completion, val number: Int, val index: Int) : LibItem("h:$index")
     class Wish(val w: WishItem, index: Int) : LibItem("w:$index:${w.id}")
 }
 
@@ -69,7 +72,11 @@ private fun buildList(
     return when (tab) {
         "beaten" -> {
             val base = s.baseline
-            val hist: List<LibItem> = ref.history.mapIndexed { i, c -> LibItem.Hist(c, base + i + 1, i) }
+            val edits = historyEdits(s)
+            // History games you've edited show as your own (editable) copy, with the same number.
+            val hist: List<LibItem> = ref.history.mapIndexed { i, c ->
+                edits[historyKey(i, c)]?.let { LibItem.Own(it, base + i + 1) } ?: LibItem.Hist(c, base + i + 1, i)
+            }
             val app: List<LibItem> = beaten(s).mapIndexed { i, g -> LibItem.Own(g, base + ref.history.size + i + 1) }
             (hist + app).asReversed().filter {
                 when (it) {
@@ -130,6 +137,7 @@ fun GamesScreen(
     f: Filters,
     onAdd: () -> Unit,
     onEdit: (String) -> Unit,
+    onEditHistory: (Int) -> Unit,
     onOpenWish: (String) -> Unit,
 ) {
     val s = vm.state
@@ -238,17 +246,22 @@ fun GamesScreen(
                             playedOn(s, g),
                             if (g.hours > 0) "${fmtNum(g.hours)}h played" else "",
                             fmtDate(g.beatenAt),
-                            "+${gameXp(g)} XP",
+                            if (g.histKey.isEmpty()) "+${gameXp(g)} XP" else "",
+                            achText(g),
                         ).filter { it.isNotBlank() }.joinToString(" · ")
                     } else {
-                        listOf(playedOn(s, g), g.genre, if (g.series.isNotBlank()) "${g.series} series" else "", estText(g))
+                        listOf(playedOn(s, g), g.genre, if (g.series.isNotBlank()) "${g.series} series" else "", estText(g), achText(g))
                             .filter { it.isNotBlank() }.joinToString(" · ")
                     }
                     if (f.grid) {
                         GridCard(
                             g.title, g.genre.ifBlank { deviceName(s, g.device) }, g.cover,
                             badge = n?.let { "#$it" },
-                            meta = playedOn(s, g) + if (g.est > 0 && g.status != "beaten") " · ${fmtNum(g.est)}h" else "",
+                            meta = listOf(
+                                playedOn(s, g),
+                                if (g.est > 0 && g.status != "beaten") "${fmtNum(g.est)}h" else "",
+                                achText(g),
+                            ).filter { it.isNotBlank() }.joinToString(" · "),
                         ) { onEdit(g.id) }
                     } else {
                         ListRow(
@@ -264,9 +277,9 @@ fun GamesScreen(
                     val c = item.c
                     val meta = listOf(c.platform, fmtDate(c.date)).filter { it.isNotBlank() }.joinToString(" · ")
                     if (f.grid) {
-                        GridCard(c.title, c.platform, "", badge = "#${item.number}", meta = meta, onClick = null)
+                        GridCard(c.title, c.platform, "", badge = "#${item.number}", meta = meta) { onEditHistory(item.index) }
                     } else {
-                        ListRow(c.title, c.platform, "", meta, trailing = "#${item.number}", desc = "", onClick = null)
+                        ListRow(c.title, c.platform, "", meta, trailing = "#${item.number}", desc = "") { onEditHistory(item.index) }
                     }
                 }
                 is LibItem.Wish -> {

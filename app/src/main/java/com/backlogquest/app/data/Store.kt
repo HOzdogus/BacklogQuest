@@ -121,7 +121,7 @@ object Store {
         put("est", g.est); put("estSource", g.estSource); put("hours", g.hours)
         put("beatenAt", g.beatenAt); put("addedAt", g.addedAt); put("order", g.order)
         put("cover", g.cover); put("platform", g.platform); put("source", g.source)
-        put("achSource", g.achSource)
+        put("achSource", g.achSource); put("histKey", g.histKey)
         put("achievements", JSONArray().apply {
             g.achievements.forEach {
                 put(JSONObject().put("n", it.name).put("d", it.desc).put("k", it.kind).put("e", it.earned))
@@ -162,6 +162,7 @@ object Store {
                 platform = o.str("platform"),
                 source = o.str("source"),
                 achSource = o.str("achSource"),
+                histKey = o.str("histKey"),
                 achievements = o.optJSONArray("achievements")?.let { a ->
                     (0 until a.length()).mapNotNull { j ->
                         val x = a.optJSONObject(j) ?: return@mapNotNull null
