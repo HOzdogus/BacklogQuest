@@ -40,6 +40,30 @@ data class Game(
     val platform: String = "",
     /** Store it was imported from, e.g. "Steam". Empty if added by hand. */
     val source: String = "",
+    /** The game's full achievement/trophy list, found by Auto-fill. */
+    val achievements: List<Achievement> = emptyList(),
+    /** Where that list came from: "Steam", "RetroAchievements", "PSNProfiles" or "TrueAchievements". */
+    val achSource: String = "",
+)
+
+/** One achievement or trophy. kind is e.g. "Gold", "10 pts" or "". */
+data class Achievement(
+    val name: String,
+    val desc: String = "",
+    val kind: String = "",
+    val earned: Boolean = false,
+)
+
+/** Best current price for a wishlist game, from IsThereAnyDeal. Amounts in [currency]. */
+data class Price(
+    val amount: Double,
+    val regular: Double,
+    val cut: Int,
+    val shop: String,
+    val low: Double?,
+    val currency: String,
+    val url: String,
+    val updated: String,
 )
 
 /** Everything you can change in the app. Saved on the phone. */
@@ -52,6 +76,11 @@ data class AppState(
     val dataUrl: String = DEFAULT_DATA_URL,
     val rawgKey: String = "",
     val lastSync: String = "",
+    val raUser: String = "",
+    val raKey: String = "",
+    val itadKey: String = "",
+    /** Wishlist prices, keyed by normTitle(title). */
+    val prices: Map<String, Price> = emptyMap(),
 )
 
 /** One completion from your imported HowLongToBeat history. */

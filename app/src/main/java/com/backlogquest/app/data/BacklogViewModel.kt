@@ -34,6 +34,39 @@ class BacklogViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** A message shown briefly at the top of the screen. */
     var toast by mutableStateOf<String?>(null)
+    var priceBusy by mutableStateOf(false)
+        private set
+    var priceMessage by mutableStateOf("")
+        private set
+
+    /** Every wishlist title: your own wishlist games plus the data file's wishlist. */
+    fun wishlistTitles(): List<String> =
+        state.games.filter { it.status == "wishlist" }.map { it.title } +
+            ref.wishlist.filter { it.id !in state.hiddenWish }.map { it.title }
+
+    /** Fetches current prices for the given titles from IsThereAnyDeal and saves them. */
+    fun updatePrices(titles: List<String>) {
+        if (priceBusy || titles.isEmpty()) return
+        priceBusy = true
+        priceMessage = "Getting prices…"
+        viewModelScope.launch {
+            try {
+                val found = Prices.lookup(state.itadKey, titles) { m -> viewModelScope.launch { priceMessage = m } }
+                update { it.copy(prices = it.prices + found) }
+                priceMessage = if (titles.size == 1) {
+                    if (found.isEmpty()) "IsThereAnyDeal doesn't sell this game (it covers PC stores)." else ""
+                } else "Prices found for ${found.size} of ${titles.distinct().size} games."
+            } catch (e: Prices.PriceError) {
+                priceMessage = e.message ?: "Couldn't get prices."
+            } catch (e: Exception) {
+                priceMessage = "Couldn't get prices. Check your connection and try again."
+            } finally {
+                priceBusy = false
+            }
+        }
+    }
+
+    fun priceFor(title: String): Price? = state.prices[normTitle(title)]
 
     init {
         viewModelScope.launch {

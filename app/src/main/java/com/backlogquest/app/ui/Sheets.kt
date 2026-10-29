@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,6 +38,11 @@ import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
 import com.backlogquest.app.data.Hltb
+import com.backlogquest.app.data.Achievement
+import com.backlogquest.app.data.Achievements
+import com.backlogquest.app.data.Prices
+import com.backlogquest.app.data.deviceName
+import androidx.compose.ui.platform.LocalContext
 import com.backlogquest.app.data.knownPlatforms
 import com.backlogquest.app.data.Rawg
 import com.backlogquest.app.data.STATUSES
@@ -83,6 +89,12 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
     var coverNote by remember(target) { mutableStateOf("") }
     var busy by remember(target) { mutableStateOf(false) }
     var confirmDelete by remember(target) { mutableStateOf(false) }
+    var achievements by remember(target) { mutableStateOf(start.achievements) }
+    var achSource by remember(target) { mutableStateOf(start.achSource) }
+    var showAchievements by remember(target) { mutableStateOf(false) }
+    var achBusy by remember(target) { mutableStateOf(false) }
+    var achNote by remember(target) { mutableStateOf("") }
+    val ctx = LocalContext.current
 
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -164,6 +176,27 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             }
             if (cover.isBlank() && hltbCover.isNotBlank()) cover = hltbCover
 
+            // Achievements / trophies, from the site that suits the platform.
+            val draft = Game(id = "", title = lookupTitle, device = device, status = status, platform = platform,
+                source = existing?.source.orEmpty())
+            val source = Achievements.pickSource(draft, deviceName(vm.state, device))
+            if (source != null) {
+                note = (parts + "Finding achievements on $source…").joinToString("\n")
+                try {
+                    val found = Achievements.find(ctx, source, lookupTitle, platform.ifBlank { deviceName(vm.state, device) }, vm.state)
+                    achievements = Achievements.mergeEarned(achievements, found.list)
+                    achSource = source
+                    parts += "${found.list.size} achievements from $source."
+                } catch (e: Achievements.AchError) {
+                    parts += e.message ?: "Couldn't find achievements."
+                } catch (e: Exception) {
+                    parts += "Couldn't reach $source for achievements."
+                }
+            }
+
+            // Price, for wishlist games.
+            if (status == "wishlist" && vm.state.itadKey.isNotBlank()) vm.updatePrices(listOf(lookupTitle))
+
             parts += "Check it over, then save."
             note = parts.joinToString("\n")
             busy = false
@@ -189,6 +222,8 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             series = series.trim(), desc = desc.trim(), platform = platform.trim(),
             estSource = if (estNum > 0) estSource.ifBlank { "manual" } else "",
             cover = cover,
+            achievements = achievements,
+            achSource = if (achievements.isEmpty()) "" else achSource,
         )
         if (status == "beaten") {
             rec = rec.copy(
@@ -321,6 +356,66 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            // ---- Achievements ----
+            Text("Achievements", color = BQ.Muted, fontSize = 12.sp)
+            if (achievements.isEmpty()) {
+                Hint("None yet. Auto-fill looks them up, or pick a site:")
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${achievements.count { it.earned }} / ${achievements.size} earned",
+                        color = BQ.B, fontFamily = BQ.Mono, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    PixelButton("VIEW LIST", kind = BtnKind.B) { showAchievements = true }
+                }
+                Hint("From $achSource. Look up again on:")
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Achievements.SOURCES.forEach { src ->
+                    TabChip(src, src == achSource && achievements.isNotEmpty()) {
+                        val t = title.trim()
+                        if (t.isEmpty() || achBusy) return@TabChip
+                        achBusy = true
+                        achNote = "Looking on $src…"
+                        scope.launch {
+                            try {
+                                val found = Achievements.find(ctx, src, t, platform.ifBlank { deviceName(vm.state, device) }, vm.state)
+                                achievements = Achievements.mergeEarned(achievements, found.list)
+                                achSource = src
+                                achNote = "Found ${found.list.size} on $src (\"${found.title}\"). Save to keep them."
+                            } catch (e: Achievements.AchError) {
+                                achNote = e.message ?: "Couldn't find achievements."
+                            } catch (e: Exception) {
+                                achNote = "Couldn't reach $src."
+                            } finally {
+                                achBusy = false
+                            }
+                        }
+                    }
+                }
+            }
+            if (achNote.isNotBlank()) Hint(achNote)
+
+            // ---- Price (wishlist) ----
+            if (status == "wishlist") {
+                Text("Price", color = BQ.Muted, fontSize = 12.sp)
+                val price = vm.priceFor(title)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        price?.let { Prices.describe(it) } ?: "Not checked yet",
+                        color = if (price != null) BQ.Ink else BQ.Muted, fontSize = 14.sp, modifier = Modifier.weight(1f),
+                    )
+                    if (vm.state.itadKey.isNotBlank()) {
+                        PixelButton(if (vm.priceBusy) "…" else "CHECK", enabled = !vm.priceBusy && title.isNotBlank()) {
+                            vm.updatePrices(listOf(title.trim()))
+                        }
+                    }
+                }
+                if (vm.state.itadKey.isBlank()) Hint("Add a free IsThereAnyDeal key in Setup to see prices.")
+                else if (vm.priceMessage.isNotBlank() && !vm.priceBusy) Hint(vm.priceMessage)
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Cover(title.ifBlank { "?" }, genre, cover, Modifier.width(96.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -375,9 +470,76 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
             }
         }
     }
+
+    if (showAchievements) {
+        AchievementList(
+            list = achievements,
+            source = achSource,
+            onToggle = { i -> achievements = achievements.mapIndexed { j, a -> if (j == i) a.copy(earned = !a.earned) else a } },
+            onDismiss = { showAchievements = false },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/** The full achievement / trophy list, with ticks for the ones you've earned. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AchievementList(list: List<Achievement>, source: String, onToggle: (Int) -> Unit, onDismiss: () -> Unit) {
+    var leftOnly by remember { mutableStateOf(false) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = BQ.Shell2,
+        contentColor = BQ.Ink,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+            SectionTitle("ACHIEVEMENTS · ${list.count { it.earned }}/${list.size}")
+            Hint("From $source. Tick the ones you've earned, then save the game.")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                TabChip("All", !leftOnly) { leftOnly = false }
+                TabChip("Still to get", leftOnly) { leftOnly = true }
+            }
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth()) {
+                items(list.size) { i ->
+                    val a = list[i]
+                    if (leftOnly && a.earned) return@items
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggle(i) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = a.earned, onCheckedChange = { onToggle(i) },
+                            colors = androidx.compose.material3.CheckboxDefaults.colors(
+                                checkedColor = BQ.B, uncheckedColor = BQ.Muted, checkmarkColor = BQ.Shell,
+                            ),
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(a.name, color = if (a.earned) BQ.Muted else BQ.Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            if (a.desc.isNotBlank()) Text(a.desc, color = BQ.Muted, fontSize = 13.sp)
+                        }
+                        if (a.kind.isNotBlank()) {
+                            Text(a.kind, color = trophyColour(a.kind), fontSize = 12.sp, fontFamily = BQ.Mono,
+                                modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun trophyColour(kind: String) = when (kind.lowercase()) {
+    "platinum" -> BQ.Silver
+    "gold" -> BQ.Gold
+    "silver" -> BQ.Silver
+    "bronze" -> BQ.Bronze
+    else -> BQ.Muted
+}
+
 @Composable
 fun WishSheet(vm: BacklogViewModel, id: String, onDismiss: () -> Unit) {
     val w = vm.ref.wishlist.firstOrNull { it.id == id }
@@ -410,6 +572,17 @@ fun WishSheet(vm: BacklogViewModel, id: String, onDismiss: () -> Unit) {
                 Hint("main story" + if (w.coopHours > 0) " · ${fmtHours(w.coopHours)} co-op" else "")
             }
             Hint(w.platforms.joinToString(", ").ifBlank { "Platform unknown" })
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val price = vm.priceFor(w.title)
+                Text(
+                    price?.let { Prices.describe(it) } ?: if (s.itadKey.isBlank()) "Add an IsThereAnyDeal key in Setup for prices" else "Price not checked yet",
+                    color = if (price != null) BQ.Ink else BQ.Muted, fontSize = 14.sp, modifier = Modifier.weight(1f),
+                )
+                if (s.itadKey.isNotBlank()) {
+                    PixelButton(if (vm.priceBusy) "…" else "CHECK PRICE", enabled = !vm.priceBusy) { vm.updatePrices(listOf(w.title)) }
+                }
+            }
+            if (vm.priceMessage.isNotBlank() && !vm.priceBusy && vm.priceFor(w.title) == null) Hint(vm.priceMessage)
             TagRow(w.tags)
             if (w.onDrive.isNotBlank()) {
                 Hint(

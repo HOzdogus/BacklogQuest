@@ -52,6 +52,16 @@ object Store {
         o.put("dataUrl", s.dataUrl)
         o.put("rawgKey", s.rawgKey)
         o.put("lastSync", s.lastSync)
+        o.put("raUser", s.raUser)
+        o.put("raKey", s.raKey)
+        o.put("itadKey", s.itadKey)
+        o.put("prices", JSONObject().apply {
+            s.prices.forEach { (k, p) ->
+                put(k, JSONObject().put("amount", p.amount).put("regular", p.regular).put("cut", p.cut)
+                    .put("shop", p.shop).put("low", p.low ?: JSONObject.NULL).put("currency", p.currency)
+                    .put("url", p.url).put("updated", p.updated))
+            }
+        })
         // Write to a temporary file first so a crash mid-save can't wipe your list.
         val tmp = File(dir, "$STATE_FILE.tmp")
         tmp.writeText(o.toString())
@@ -73,6 +83,24 @@ object Store {
                 dataUrl = o.str("dataUrl").ifBlank { DEFAULT_DATA_URL },
                 rawgKey = o.str("rawgKey"),
                 lastSync = o.str("lastSync"),
+                raUser = o.str("raUser"),
+                raKey = o.str("raKey"),
+                itadKey = o.str("itadKey"),
+                prices = o.optJSONObject("prices")?.let { po ->
+                    po.keys().asSequence().mapNotNull { k ->
+                        val p = po.optJSONObject(k) ?: return@mapNotNull null
+                        k to Price(
+                            amount = p.optDouble("amount", 0.0),
+                            regular = p.optDouble("regular", 0.0),
+                            cut = p.optInt("cut", 0),
+                            shop = p.optString("shop"),
+                            low = if (p.isNull("low")) null else p.optDouble("low"),
+                            currency = p.optString("currency", "GBP"),
+                            url = p.optString("url"),
+                            updated = p.optString("updated"),
+                        )
+                    }.toMap()
+                } ?: emptyMap(),
             )
         } catch (e: Exception) {
             null
@@ -89,6 +117,12 @@ object Store {
         put("est", g.est); put("estSource", g.estSource); put("hours", g.hours)
         put("beatenAt", g.beatenAt); put("addedAt", g.addedAt); put("order", g.order)
         put("cover", g.cover); put("platform", g.platform); put("source", g.source)
+        put("achSource", g.achSource)
+        put("achievements", JSONArray().apply {
+            g.achievements.forEach {
+                put(JSONObject().put("n", it.name).put("d", it.desc).put("k", it.kind).put("e", it.earned))
+            }
+        })
     }
 
     private fun parseDevices(a: JSONArray?): List<Device> {
@@ -123,6 +157,13 @@ object Store {
                 cover = o.str("cover"),
                 platform = o.str("platform"),
                 source = o.str("source"),
+                achSource = o.str("achSource"),
+                achievements = o.optJSONArray("achievements")?.let { a ->
+                    (0 until a.length()).mapNotNull { j ->
+                        val x = a.optJSONObject(j) ?: return@mapNotNull null
+                        Achievement(x.optString("n"), x.optString("d"), x.optString("k"), x.optBoolean("e", false))
+                    }
+                } ?: emptyList(),
             )
         }
     }

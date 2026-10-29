@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.playedOn
+import com.backlogquest.app.data.Prices
+import com.backlogquest.app.data.normTitle
 import com.backlogquest.app.data.AppState
 import com.backlogquest.app.data.BUCKETS
 import com.backlogquest.app.data.BacklogViewModel
@@ -100,6 +102,9 @@ private fun buildList(
             }
             if (sort == "short") {
                 all.sortedWith(compareBy<LibItem>({ hours(it).let { h -> if (h > 0) h else 1e9 } }, { title(it).lowercase() }))
+            } else if (sort == "price") {
+                // Cheapest first; games without a price go to the end.
+                all.sortedWith(compareBy<LibItem>({ s.prices[normTitle(title(it))]?.amount ?: 1e9 }, { title(it).lowercase() }))
             } else {
                 all.sortedBy { title(it).lowercase() }
             }
@@ -171,7 +176,23 @@ fun GamesScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChipRow(BUCKETS, f.time) { f.time = it }
                     if (f.libTab == "wishlist") ChipRow(WISH_TAGS, f.wishTag) { f.wishTag = it }
-                    ChipRow(listOf("az" to "A–Z", "short" to "Shortest first"), f.sort) { f.sort = it }
+                    ChipRow(
+                        listOf("az" to "A–Z", "short" to "Shortest first") +
+                            if (f.libTab == "wishlist") listOf("price" to "Cheapest first") else emptyList(),
+                        f.sort,
+                    ) { f.sort = it }
+                    if (f.libTab == "wishlist") {
+                        if (s.itadKey.isBlank()) {
+                            Hint("Add a free IsThereAnyDeal key in Setup to see prices.")
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                PixelButton(if (vm.priceBusy) "UPDATING…" else "UPDATE PRICES", enabled = !vm.priceBusy) {
+                                    vm.updatePrices(vm.wishlistTitles())
+                                }
+                                Hint(vm.priceMessage, Modifier.weight(1f))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -232,7 +253,9 @@ fun GamesScreen(
                     } else {
                         ListRow(
                             g.title, g.genre.ifBlank { deviceName(s, g.device) }, g.cover, meta,
-                            trailing = n?.let { "#$it" } ?: deviceName(s, g.device).uppercase(),
+                            trailing = n?.let { "#$it" }
+                                ?: s.prices[normTitle(g.title)]?.takeIf { g.status == "wishlist" }?.let { Prices.format(it) }
+                                ?: deviceName(s, g.device).uppercase(),
                             desc = g.desc,
                         ) { onEdit(g.id) }
                     }
@@ -251,12 +274,16 @@ fun GamesScreen(
                     if (f.grid) {
                         GridCard(
                             w.title, w.platforms.firstOrNull().orEmpty(), "",
-                            badge = fmtHours(w.hours), meta = w.platforms.take(2).joinToString(", "),
+                            badge = s.prices[normTitle(w.title)]?.let { Prices.format(it) } ?: fmtHours(w.hours),
+                            meta = w.platforms.take(2).joinToString(", "),
                         ) { onOpenWish(w.id) }
                     } else {
                         ListRow(
                             w.title, w.platforms.firstOrNull().orEmpty(), "", platformList(w.platforms),
-                            trailing = fmtHours(w.hours), desc = "", tags = w.tags,
+                            trailing = s.prices[normTitle(w.title)]?.let { p ->
+                                Prices.format(p) + if (p.cut > 0) " −${p.cut}%" else ""
+                            } ?: fmtHours(w.hours),
+                            desc = "", tags = w.tags,
                         ) { onOpenWish(w.id) }
                     }
                 }

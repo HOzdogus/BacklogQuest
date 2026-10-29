@@ -40,6 +40,9 @@ fun SetupScreen(vm: BacklogViewModel) {
     var baselineText by remember { mutableStateOf(if (s.baseline > 0) s.baseline.toString() else "") }
     var urlText by remember { mutableStateOf(s.dataUrl) }
     var keyText by remember { mutableStateOf(s.rawgKey) }
+    var raUserText by remember { mutableStateOf(s.raUser) }
+    var raKeyText by remember { mutableStateOf(s.raKey) }
+    var itadText by remember { mutableStateOf(s.itadKey) }
     var newDevice by remember { mutableStateOf("") }
     var confirmReplace by remember { mutableStateOf(false) }
 
@@ -150,6 +153,49 @@ fun SetupScreen(vm: BacklogViewModel) {
                     singleLine = true,
                     colors = bqFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        item {
+            Panel {
+                SectionTitle("ACHIEVEMENTS")
+                Hint(
+                    "Auto-fill finds each game's full achievement list: Steam for PC games, PSNProfiles for " +
+                        "PlayStation, TrueAchievements for Xbox, and RetroAchievements for retro platforms " +
+                        "(set the game's platform, e.g. PS2 or SNES). RetroAchievements needs your username and " +
+                        "web API key, from retroachievements.org → Settings. With them, achievements you've " +
+                        "already earned there are ticked automatically.",
+                )
+                OutlinedTextField(
+                    value = raUserText,
+                    onValueChange = { t -> raUserText = t; vm.update { it.copy(raUser = t.trim()) } },
+                    label = { Text("RetroAchievements username") },
+                    singleLine = true, colors = bqFieldColors(), modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = raKeyText,
+                    onValueChange = { t -> raKeyText = t; vm.update { it.copy(raKey = t.trim()) } },
+                    label = { Text("RetroAchievements web API key") },
+                    singleLine = true, colors = bqFieldColors(), modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        item {
+            Panel {
+                SectionTitle("PRICES")
+                Hint(
+                    "Wishlist prices come from IsThereAnyDeal: the cheapest UK price across Steam, GOG, Epic, " +
+                        "Humble and more, plus the lowest it's ever been. It covers PC stores only. Get a free " +
+                        "API key at isthereanydeal.com → Apps → Register app, and paste the API key (not the " +
+                        "OAuth client ID) here.",
+                )
+                OutlinedTextField(
+                    value = itadText,
+                    onValueChange = { t -> itadText = t; vm.update { it.copy(itadKey = t.trim()) } },
+                    label = { Text("IsThereAnyDeal API key") },
+                    singleLine = true, colors = bqFieldColors(), modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
