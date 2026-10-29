@@ -481,7 +481,6 @@ fun EditSheet(vm: BacklogViewModel, target: EditTarget, onDismiss: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 /** The full achievement / trophy list, with ticks for the ones you've earned. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -540,6 +539,7 @@ private fun trophyColour(kind: String) = when (kind.lowercase()) {
     else -> BQ.Muted
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun WishSheet(vm: BacklogViewModel, id: String, onDismiss: () -> Unit) {
     val w = vm.ref.wishlist.firstOrNull { it.id == id }
