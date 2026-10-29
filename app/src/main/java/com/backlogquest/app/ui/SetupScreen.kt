@@ -43,6 +43,8 @@ fun SetupScreen(vm: BacklogViewModel) {
     var raUserText by remember { mutableStateOf(s.raUser) }
     var raKeyText by remember { mutableStateOf(s.raKey) }
     var itadText by remember { mutableStateOf(s.itadKey) }
+    var steamKeyText by remember { mutableStateOf(s.steamKey) }
+    var steamProfileText by remember { mutableStateOf(s.steamProfile) }
     var newDevice by remember { mutableStateOf("") }
     var confirmReplace by remember { mutableStateOf(false) }
 
@@ -161,7 +163,25 @@ fun SetupScreen(vm: BacklogViewModel) {
             Panel {
                 SectionTitle("ACHIEVEMENTS")
                 Hint(
-                    "Auto-fill finds each game's full achievement list: Steam for PC games, PSNProfiles for " +
+                    "Steam: add your free Steam Web API key (steamcommunity.com/dev/apikey) for the most " +
+                        "reliable lists. Add your Steam profile too (link, custom name or SteamID) and achievements " +
+                        "you've unlocked are ticked automatically; your profile's game details must be public. " +
+                        "Without a key, Steam games use TrueSteamAchievements.",
+                )
+                OutlinedTextField(
+                    value = steamKeyText,
+                    onValueChange = { t -> steamKeyText = t; vm.update { it.copy(steamKey = t.trim()) } },
+                    label = { Text("Steam Web API key") },
+                    singleLine = true, colors = bqFieldColors(), modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = steamProfileText,
+                    onValueChange = { t -> steamProfileText = t; vm.update { it.copy(steamProfile = t.trim()) } },
+                    label = { Text("Steam profile (optional)") },
+                    singleLine = true, colors = bqFieldColors(), modifier = Modifier.fillMaxWidth(),
+                )
+                Hint(
+                    "Other platforms: Auto-fill uses PSNProfiles for " +
                         "PlayStation, TrueAchievements for Xbox, and RetroAchievements for retro platforms " +
                         "(set the game's platform, e.g. PS2 or SNES). RetroAchievements needs your username and " +
                         "web API key, from retroachievements.org → Settings. With them, achievements you've " +

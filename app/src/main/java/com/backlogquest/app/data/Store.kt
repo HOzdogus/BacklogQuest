@@ -55,6 +55,8 @@ object Store {
         o.put("raUser", s.raUser)
         o.put("raKey", s.raKey)
         o.put("itadKey", s.itadKey)
+        o.put("steamKey", s.steamKey)
+        o.put("steamProfile", s.steamProfile)
         o.put("prices", JSONObject().apply {
             s.prices.forEach { (k, p) ->
                 put(k, JSONObject().put("amount", p.amount).put("regular", p.regular).put("cut", p.cut)
@@ -86,6 +88,8 @@ object Store {
                 raUser = o.str("raUser"),
                 raKey = o.str("raKey"),
                 itadKey = o.str("itadKey"),
+                steamKey = o.str("steamKey"),
+                steamProfile = o.str("steamProfile"),
                 prices = o.optJSONObject("prices")?.let { po ->
                     po.keys().asSequence().mapNotNull { k ->
                         val p = po.optJSONObject(k) ?: return@mapNotNull null

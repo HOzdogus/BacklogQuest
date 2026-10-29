@@ -40,10 +40,10 @@ object Achievements {
 
     suspend fun find(ctx: Context, source: String, title: String, platform: String, s: AppState): Found =
         when (source) {
-            STEAM -> steam(ctx, title)
+            STEAM -> steam(ctx, title, s)
             RA -> retro(title, platform, s)
             PSN -> psnProfiles(ctx, title, platform)
-            XBOX -> trueAchievements(ctx, title)
+            XBOX -> trueAchievements(ctx, title, TA_SITE)
             else -> throw AchError("Unknown source.")
         }
 
@@ -58,35 +58,93 @@ object Achievements {
 
     // ---------------- Steam ----------------
 
-    private suspend fun steam(ctx: Context, title: String): Found {
-        val app = withContext(Dispatchers.IO) {
-            val search = Http.json(
-                "https://store.steampowered.com/api/storesearch/?term=${Http.enc(title)}&l=english&cc=GB",
-            ).optJSONArray("items") ?: JSONArray()
-            val items = (0 until search.length()).mapNotNull { search.optJSONObject(it) }
-            val q = normTitle(title)
-            items.firstOrNull { normTitle(it.optString("name")) == q } ?: items.firstOrNull()
-        } ?: throw AchError("Couldn't find this game on Steam.")
+    private const val STEAM_API = "https://api.steampowered.com"
+
+    /**
+     * Steam's official Web API with your own key: names, descriptions and how
+     * many players have each one, plus your own unlocks if you've added your
+     * Steam profile. Without a key (or if it fails), TrueSteamAchievements.
+     */
+    private suspend fun steam(ctx: Context, title: String, s: AppState): Found {
+        if (s.steamKey.isBlank()) return trueAchievements(ctx, title, TSA_SITE)
+        return try {
+            steamApi(title, s)
+        } catch (e: AchError) {
+            if (e.message?.startsWith("Steam didn't accept") == true) throw e
+            try {
+                trueAchievements(ctx, title, TSA_SITE)
+            } catch (e2: Exception) {
+                throw e
+            }
+        }
+    }
+
+    private var steamIdCache: Pair<String, String>? = null
+
+    /** Your SteamID64 from a number, a profile link or a custom URL name. */
+    private fun steamId(s: AppState): String? {
+        val raw = s.steamProfile.trim().trimEnd('/')
+        if (raw.isEmpty()) return null
+        steamIdCache?.let { (k, v) -> if (k == raw) return v }
+        val last = raw.substringAfterLast("/")
+        val id = if (last.matches(Regex("\\d{17}"))) last else {
+            val j = Http.json("$STEAM_API/ISteamUser/ResolveVanityURL/v1/?key=${Http.enc(s.steamKey)}&vanityurl=${Http.enc(last)}")
+            j.optJSONObject("response")?.optString("steamid")?.takeIf { it.isNotBlank() }
+        }
+        if (id != null) steamIdCache = raw to id
+        return id
+    }
+
+    private suspend fun steamApi(title: String, s: AppState): Found = withContext(Dispatchers.IO) {
+        val key = Http.enc(s.steamKey.trim())
+        val search = Http.json(
+            "https://store.steampowered.com/api/storesearch/?term=${Http.enc(title)}&l=english&cc=GB",
+        ).optJSONArray("items") ?: JSONArray()
+        val items = (0 until search.length()).mapNotNull { search.optJSONObject(it) }
+        val q = normTitle(title)
+        val app = items.firstOrNull { normTitle(it.optString("name")) == q } ?: items.firstOrNull()
+            ?: throw AchError("Couldn't find this game on Steam.")
+        val appId = app.optInt("id")
         val name = app.optString("name")
 
-        val page = PageReader.read(
-            ctx, "https://steamcommunity.com/stats/${app.optInt("id")}/achievements/?l=english",
-            """
-            (function(){ $READY
-              var out = [];
-              document.querySelectorAll('.achieveRow').forEach(function(r){
-                var h = r.querySelector('h3'), d = r.querySelector('h5'), p = r.querySelector('.achievePercent');
-                var n = h ? h.innerText.trim() : '';
-                if (n) out.push({n: n, d: d ? d.innerText.trim() : '', k: p ? p.innerText.trim() + ' of players' : ''});
-              });
-              return out.length ? JSON.stringify(out) : '';
-            })()
-            """.trimIndent(),
-        ) ?: throw AchError("Couldn't load Steam's achievement list for $name. It may have no achievements, or Steam may be asking for an age check.")
-        val arr = JSONArray(page)
-        val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-            .map { Trophy(it.optString("n"), it.optString("d"), it.optString("k")) }
-        return Found(name, list)
+        val schema = Http.call("$STEAM_API/ISteamUserStats/GetSchemaForGame/v2/?key=$key&appid=$appId&l=english")
+        if (schema.code == 401 || schema.code == 403) throw AchError("Steam didn't accept your Web API key. Check it in Setup.")
+        if (schema.code !in 200..299) throw AchError("Steam couldn't load achievements for $name.")
+        val achs = JSONObject(schema.body).optJSONObject("game")?.optJSONObject("availableGameStats")
+            ?.optJSONArray("achievements")
+        if (achs == null || achs.length() == 0) throw AchError("$name has no Steam achievements.")
+
+        val percents = try {
+            val arr = Http.json("$STEAM_API/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid=$appId")
+                .optJSONObject("achievementpercentages")?.optJSONArray("achievements") ?: JSONArray()
+            (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                .associate { it.optString("name") to it.optDouble("percent", -1.0) }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+
+        val unlocked = try {
+            steamId(s)?.let { sid ->
+                val arr = Http.json("$STEAM_API/ISteamUserStats/GetPlayerAchievements/v1/?key=$key&steamid=$sid&appid=$appId")
+                    .optJSONObject("playerstats")?.optJSONArray("achievements") ?: JSONArray()
+                (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                    .filter { it.optInt("achieved") == 1 }.map { it.optString("apiname") }.toSet()
+            } ?: emptySet()
+        } catch (e: Exception) {
+            emptySet() // private profile or game not owned: just no ticks
+        }
+
+        val list = (0 until achs.length()).mapNotNull { achs.optJSONObject(it) }.map { a ->
+            val api = a.optString("name")
+            val pct = percents[api]?.takeIf { it >= 0 }
+            Trophy(
+                name = a.optString("displayName").ifBlank { api },
+                desc = a.optString("description").ifBlank { if (a.optInt("hidden") == 1) "Hidden achievement" else "" },
+                kind = pct?.let { String.format(java.util.Locale.UK, "%.1f%% of players", it) } ?: "",
+                earned = api in unlocked,
+            )
+        }
+        Found(name, list)
     }
 
     // ---------------- RetroAchievements ----------------
@@ -245,9 +303,14 @@ object Achievements {
         return Found(pick.optString("t"), list)
     }
 
-    private suspend fun trueAchievements(ctx: Context, title: String): Found {
+    private const val TA_SITE = "https://www.trueachievements.com"
+    private const val TSA_SITE = "https://www.truesteamachievements.com"
+
+    /** TrueAchievements (Xbox) and its Steam twin TrueSteamAchievements share one layout. */
+    private suspend fun trueAchievements(ctx: Context, title: String, site: String): Found {
+        val siteName = if (site == TSA_SITE) "TrueSteamAchievements" else "TrueAchievements"
         val search = PageReader.read(
-            ctx, "https://www.trueachievements.com/searchresults.aspx?search=${Http.enc(title)}",
+            ctx, "$site/searchresults.aspx?search=${Http.enc(title)}",
             """
             (function(){ $READY
               if (/^\/game\/[^\/]+\/?$/.test(location.pathname)) {
@@ -264,14 +327,14 @@ object Achievements {
               return out.length ? JSON.stringify(out) : '';
             })()
             """.trimIndent(),
-        ) ?: throw AchError("Couldn't reach TrueAchievements. Try again in a moment.")
+        ) ?: throw AchError("Couldn't reach $siteName. Try again in a moment.")
         val results = JSONArray(search).let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }
         val q = normTitle(title)
         val pick = results.firstOrNull { normTitle(it.optString("t")) == q } ?: results.firstOrNull()
-            ?: throw AchError("Couldn't find this game on TrueAchievements.")
+            ?: throw AchError("Couldn't find this game on $siteName.")
 
         val page = PageReader.read(
-            ctx, "https://www.trueachievements.com" + pick.optString("h") + "/achievements",
+            ctx, site + pick.optString("h") + "/achievements",
             """
             (function(){ $READY
               var out = [], seen = {};
@@ -290,11 +353,11 @@ object Achievements {
             })()
             """.trimIndent(),
             timeoutMs = 30_000,
-        ) ?: throw AchError("Couldn't load the achievement list from TrueAchievements.")
+        ) ?: throw AchError("Couldn't load the achievement list from $siteName.")
         val arr = JSONArray(page)
         val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
             .map { Trophy(it.optString("n"), it.optString("d"), it.optString("k")) }
-        if (list.isEmpty()) throw AchError("TrueAchievements didn't list any achievements for this game.")
+        if (list.isEmpty()) throw AchError("$siteName didn't list any achievements for this game.")
         return Found(pick.optString("t").ifBlank { title }, list)
     }
 }

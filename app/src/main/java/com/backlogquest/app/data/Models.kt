@@ -79,6 +79,9 @@ data class AppState(
     val raUser: String = "",
     val raKey: String = "",
     val itadKey: String = "",
+    val steamKey: String = "",
+    /** Your SteamID64, profile link or custom URL name, for ticking off unlocks. */
+    val steamProfile: String = "",
     /** Wishlist prices, keyed by normTitle(title). */
     val prices: Map<String, Price> = emptyMap(),
 )
