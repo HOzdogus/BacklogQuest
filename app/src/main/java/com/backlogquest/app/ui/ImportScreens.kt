@@ -46,7 +46,7 @@ import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.Game
 import com.backlogquest.app.data.ImportError
 import com.backlogquest.app.data.ImportItem
-import com.backlogquest.app.data.Store
+import com.backlogquest.app.data.GameStore
 import com.backlogquest.app.data.StoreFetch
 import com.backlogquest.app.data.StoreSignIn
 import com.backlogquest.app.data.deviceName
@@ -59,7 +59,7 @@ import org.json.JSONArray
 
 /** Full-screen window: sign in to a store, read the library, then pick what to add. */
 @Composable
-fun StoreImportDialog(vm: BacklogViewModel, store: Store, onDismiss: () -> Unit) {
+fun StoreImportDialog(vm: BacklogViewModel, store: GameStore, onDismiss: () -> Unit) {
     val signIn = remember(store) { StoreSignIn(store) }
     var phase by remember { mutableStateOf("signin") } // signin, loading, review, error
     var progress by remember { mutableStateOf("") }
@@ -165,12 +165,12 @@ private fun signInWebView(ctx: android.content.Context, signIn: StoreSignIn, onR
             val result = signIn.resultFromText(text)
             when {
                 result != null -> onResult(result)
-                signIn.store == Store.PLAYSTATION && url.startsWith(StoreSignIn.PSN_SSO) && !sentToLogin -> {
+                signIn.store == GameStore.PLAYSTATION && url.startsWith(StoreSignIn.PSN_SSO) && !sentToLogin -> {
                     // Not signed in yet: go to the PlayStation sign-in.
                     sentToLogin = true
                     view.loadUrl("https://my.playstation.com/")
                 }
-                signIn.store == Store.STEAM && tries < 3 -> {
+                signIn.store == GameStore.STEAM && tries < 3 -> {
                     tries++
                     view.postDelayed({ readPage(view, url) }, 1500)
                 }
@@ -213,7 +213,7 @@ private fun signInWebView(ctx: android.content.Context, signIn: StoreSignIn, onR
                 onResult(it)
                 return
             }
-            if (signIn.store == Store.PLAYSTATION) {
+            if (signIn.store == GameStore.PLAYSTATION) {
                 if (u.contains("account.sony.com") && (u.contains("signin") || u.contains("login"))) sawSignInPage = true
                 // Back on PlayStation after signing in: fetch the sign-in token.
                 if (sentToLogin && sawSignInPage && u.contains("playstation.com") && !u.contains("account.sony.com")) {
@@ -231,11 +231,11 @@ private fun signInWebView(ctx: android.content.Context, signIn: StoreSignIn, onR
     return web
 }
 
-private fun defaultDevice(s: AppState, store: Store): String {
+private fun defaultDevice(s: AppState, store: GameStore): String {
     fun find(vararg words: String) = s.devices.firstOrNull { d -> words.any { d.name.contains(it, ignoreCase = true) } }?.id
     return when (store) {
-        Store.PLAYSTATION -> find("ps5", "ps4", "playstation", "ps")
-        Store.XBOX -> find("xbox")
+        GameStore.PLAYSTATION -> find("ps5", "ps4", "playstation", "ps")
+        GameStore.XBOX -> find("xbox")
         else -> find("pc", "steam deck", "laptop")
     } ?: s.devices.firstOrNull { !it.exempt }?.id ?: s.devices.first().id
 }
@@ -244,7 +244,7 @@ private fun defaultDevice(s: AppState, store: Store): String {
 @Composable
 private fun ImportReview(
     vm: BacklogViewModel,
-    store: Store,
+    store: GameStore,
     found: List<ImportItem>,
     modifier: Modifier,
     onDone: () -> Unit,

@@ -28,14 +28,14 @@ import androidx.compose.ui.unit.sp
 import com.backlogquest.app.data.BacklogViewModel
 import com.backlogquest.app.data.DEFAULT_DATA_URL
 import com.backlogquest.app.data.Device
-import com.backlogquest.app.data.Store
+import com.backlogquest.app.data.GameStore
 import com.backlogquest.app.data.fmtDate
 import com.backlogquest.app.data.newId
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetupScreen(vm: BacklogViewModel) {
-    var importing by remember { mutableStateOf<Store?>(null) }
+    var importing by remember { mutableStateOf<GameStore?>(null) }
     val s = vm.state
     var baselineText by remember { mutableStateOf(if (s.baseline > 0) s.baseline.toString() else "") }
     var urlText by remember { mutableStateOf(s.dataUrl) }
@@ -163,7 +163,7 @@ fun SetupScreen(vm: BacklogViewModel) {
                         "PlayStation and Xbox list the games you've bought or played.",
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Store.values().forEach { st -> PixelButton(st.label.uppercase(), kind = BtnKind.B) { importing = st } }
+                    GameStore.values().forEach { st -> PixelButton(st.label.uppercase(), kind = BtnKind.B) { importing = st } }
                 }
                 PixelButton("SIGN OUT OF ALL STORES") {
                     CookieManager.getInstance().removeAllCookies(null)

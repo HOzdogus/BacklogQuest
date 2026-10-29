@@ -27,7 +27,7 @@ import java.util.UUID
  * (Xbox). If a store changes its sign-in, that store's import may stop working
  * until the app is updated.
  */
-enum class Store(val label: String) {
+enum class GameStore(val label: String) {
     STEAM("Steam"),
     GOG("GOG"),
     EPIC("Epic"),
@@ -105,7 +105,7 @@ object Http {
  * What to load in the sign-in window and how to tell when sign-in has finished.
  * The result is a code or token that [StoreFetch] turns into a game list.
  */
-class StoreSignIn(val store: Store) {
+class StoreSignIn(val store: GameStore) {
     companion object {
         const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -137,11 +137,11 @@ class StoreSignIn(val store: Store) {
         .let { Base64.encodeToString(it, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING) }
 
     val startUrl: String = when (store) {
-        Store.STEAM -> "https://steamcommunity.com/my/games/?tab=all"
-        Store.GOG -> "https://auth.gog.com/auth?client_id=$GOG_CLIENT&redirect_uri=${Http.enc(GOG_REDIRECT)}" +
+        GameStore.STEAM -> "https://steamcommunity.com/my/games/?tab=all"
+        GameStore.GOG -> "https://auth.gog.com/auth?client_id=$GOG_CLIENT&redirect_uri=${Http.enc(GOG_REDIRECT)}" +
             "&response_type=code&layout=client2"
-        Store.EPIC -> "https://www.epicgames.com/id/login?redirectUrl=${Http.enc(EPIC_REDIRECT)}"
-        Store.AMAZON -> "https://www.amazon.com/ap/signin?" + listOf(
+        GameStore.EPIC -> "https://www.epicgames.com/id/login?redirectUrl=${Http.enc(EPIC_REDIRECT)}"
+        GameStore.AMAZON -> "https://www.amazon.com/ap/signin?" + listOf(
             "openid.ns" to "http://specs.openid.net/auth/2.0",
             "openid.claimed_id" to "http://specs.openid.net/auth/2.0/identifier_select",
             "openid.identity" to "http://specs.openid.net/auth/2.0/identifier_select",
@@ -159,31 +159,31 @@ class StoreSignIn(val store: Store) {
             "pageId" to "amzn_sonic_games_launcher",
             "openid.oa2.code_challenge" to amazonChallenge,
         ).joinToString("&") { (k, v) -> "${Http.enc(k)}=${Http.enc(v)}" }
-        Store.PLAYSTATION -> PSN_SSO
-        Store.XBOX -> "https://login.live.com/oauth20_authorize.srf?client_id=$XBOX_CLIENT" +
+        GameStore.PLAYSTATION -> PSN_SSO
+        GameStore.XBOX -> "https://login.live.com/oauth20_authorize.srf?client_id=$XBOX_CLIENT" +
             "&redirect_uri=${Http.enc(XBOX_REDIRECT)}&response_type=token&display=touch" +
             "&scope=${Http.enc("service::user.auth.xboxlive.com::MBI_SSL")}&locale=en"
     }
 
     /** Where "I've signed in" sends the window to look for the result again. */
     val retryUrl: String = when (store) {
-        Store.PLAYSTATION -> PSN_SSO
-        Store.EPIC -> EPIC_REDIRECT
+        GameStore.PLAYSTATION -> PSN_SSO
+        GameStore.EPIC -> EPIC_REDIRECT
         else -> startUrl
     }
 
     /** Pages whose text holds the answer (read with JavaScript once loaded). */
     fun wantsPageText(url: String): Boolean = when (store) {
-        Store.STEAM -> Regex("steamcommunity\\.com/(id|profiles)/[^/]+/games").containsMatchIn(url)
-        Store.EPIC -> url.startsWith("https://www.epicgames.com/id/api/redirect")
-        Store.PLAYSTATION -> url.startsWith(PSN_SSO)
+        GameStore.STEAM -> Regex("steamcommunity\\.com/(id|profiles)/[^/]+/games").containsMatchIn(url)
+        GameStore.EPIC -> url.startsWith("https://www.epicgames.com/id/api/redirect")
+        GameStore.PLAYSTATION -> url.startsWith(PSN_SSO)
         else -> false
     }
 
     /** JavaScript that returns the text we need from those pages. */
     val pageScript: String = when (store) {
         // Steam's games page keeps the whole list in a data attribute (older pages: a script variable).
-        Store.STEAM -> """
+        GameStore.STEAM -> """
             (function(){
               var t = document.querySelector('[data-profile-gameslist]');
               if (t) return t.getAttribute('data-profile-gameslist');
@@ -201,11 +201,11 @@ class StoreSignIn(val store: Store) {
     fun resultFromUrl(url: String): String? {
         val uri = Uri.parse(url)
         return when (store) {
-            Store.GOG -> if (url.startsWith("https://embed.gog.com/on_login_success")) uri.getQueryParameter("code") else null
-            Store.AMAZON -> if (url.contains("openid.oa2.authorization_code=")) {
+            GameStore.GOG -> if (url.startsWith("https://embed.gog.com/on_login_success")) uri.getQueryParameter("code") else null
+            GameStore.AMAZON -> if (url.contains("openid.oa2.authorization_code=")) {
                 uri.getQueryParameter("openid.oa2.authorization_code")
             } else null
-            Store.XBOX -> if (url.startsWith(XBOX_REDIRECT) && url.contains("access_token=")) {
+            GameStore.XBOX -> if (url.startsWith(XBOX_REDIRECT) && url.contains("access_token=")) {
                 (uri.fragment ?: url.substringAfter("#", "")).split("&")
                     .firstOrNull { it.startsWith("access_token=") }
                     ?.substringAfter("=")?.let { Uri.decode(it) }
@@ -216,11 +216,11 @@ class StoreSignIn(val store: Store) {
 
     /** Turns page text into a result, or null if this page doesn't have it yet. */
     fun resultFromText(text: String): String? = when (store) {
-        Store.STEAM -> text.takeIf { it.isNotBlank() && (it.contains("rgGames") || it.trimStart().startsWith("[")) }
-        Store.EPIC -> try {
+        GameStore.STEAM -> text.takeIf { it.isNotBlank() && (it.contains("rgGames") || it.trimStart().startsWith("[")) }
+        GameStore.EPIC -> try {
             JSONObject(text).optString("authorizationCode").takeIf { it.isNotBlank() && it != "null" }
         } catch (e: Exception) { null }
-        Store.PLAYSTATION -> try {
+        GameStore.PLAYSTATION -> try {
             JSONObject(text).optString("npsso").takeIf { it.isNotBlank() }
         } catch (e: Exception) { null }
         else -> null
@@ -233,12 +233,12 @@ object StoreFetch {
     suspend fun fetch(signIn: StoreSignIn, result: String, onProgress: (String) -> Unit): List<ImportItem> =
         withContext(Dispatchers.IO) {
             when (signIn.store) {
-                Store.STEAM -> steam(result)
-                Store.GOG -> gog(result, onProgress)
-                Store.EPIC -> epic(result, onProgress)
-                Store.AMAZON -> amazon(signIn, result, onProgress)
-                Store.PLAYSTATION -> playstation(result, onProgress)
-                Store.XBOX -> xbox(result, onProgress)
+                GameStore.STEAM -> steam(result)
+                GameStore.GOG -> gog(result, onProgress)
+                GameStore.EPIC -> epic(result, onProgress)
+                GameStore.AMAZON -> amazon(signIn, result, onProgress)
+                GameStore.PLAYSTATION -> playstation(result, onProgress)
+                GameStore.XBOX -> xbox(result, onProgress)
             }
         }
 
