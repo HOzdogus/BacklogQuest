@@ -40,7 +40,7 @@ object Achievements {
 
     suspend fun find(ctx: Context, source: String, title: String, platform: String, s: AppState): Found =
         when (source) {
-            STEAM -> steam(title)
+            STEAM -> steam(ctx, title)
             RA -> retro(title, platform, s)
             PSN -> psnProfiles(ctx, title, platform)
             XBOX -> trueAchievements(ctx, title)
@@ -58,28 +58,35 @@ object Achievements {
 
     // ---------------- Steam ----------------
 
-    private suspend fun steam(title: String): Found = withContext(Dispatchers.IO) {
-        val search = Http.json(
-            "https://store.steampowered.com/api/storesearch/?term=${Http.enc(title)}&l=english&cc=GB",
-        ).optJSONArray("items") ?: JSONArray()
-        val items = (0 until search.length()).mapNotNull { search.optJSONObject(it) }
-        val q = normTitle(title)
-        val app = items.firstOrNull { normTitle(it.optString("name")) == q } ?: items.firstOrNull()
-            ?: throw AchError("Couldn't find this game on Steam.")
-        val id = app.optInt("id")
-        val page = Http.call("https://steamcommunity.com/stats/$id/achievements/?l=english")
-        if (page.code !in 200..299) throw AchError("Steam has no achievement page for ${app.optString("name")}.")
-        val rows = Regex("""<h3>(.*?)</h3>\s*<h5>(.*?)</h5>""", RegexOption.DOT_MATCHES_ALL).findAll(page.body)
-        val percents = Regex("""achievePercent">\s*([\d.]+)%""").findAll(page.body).map { it.groupValues[1] }.toList()
-        val list = rows.mapIndexed { i, m ->
-            Trophy(
-                name = clean(m.groupValues[1]),
-                desc = clean(m.groupValues[2]),
-                kind = percents.getOrNull(i)?.let { "$it% of players" } ?: "",
-            )
-        }.filter { it.name.isNotBlank() }.toList()
-        if (list.isEmpty()) throw AchError("${app.optString("name")} has no Steam achievements.")
-        Found(app.optString("name"), list)
+    private suspend fun steam(ctx: Context, title: String): Found {
+        val app = withContext(Dispatchers.IO) {
+            val search = Http.json(
+                "https://store.steampowered.com/api/storesearch/?term=${Http.enc(title)}&l=english&cc=GB",
+            ).optJSONArray("items") ?: JSONArray()
+            val items = (0 until search.length()).mapNotNull { search.optJSONObject(it) }
+            val q = normTitle(title)
+            items.firstOrNull { normTitle(it.optString("name")) == q } ?: items.firstOrNull()
+        } ?: throw AchError("Couldn't find this game on Steam.")
+        val name = app.optString("name")
+
+        val page = PageReader.read(
+            ctx, "https://steamcommunity.com/stats/${app.optInt("id")}/achievements/?l=english",
+            """
+            (function(){ $READY
+              var out = [];
+              document.querySelectorAll('.achieveRow').forEach(function(r){
+                var h = r.querySelector('h3'), d = r.querySelector('h5'), p = r.querySelector('.achievePercent');
+                var n = h ? h.innerText.trim() : '';
+                if (n) out.push({n: n, d: d ? d.innerText.trim() : '', k: p ? p.innerText.trim() + ' of players' : ''});
+              });
+              return out.length ? JSON.stringify(out) : '';
+            })()
+            """.trimIndent(),
+        ) ?: throw AchError("Couldn't load Steam's achievement list for $name. It may have no achievements, or Steam may be asking for an age check.")
+        val arr = JSONArray(page)
+        val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+            .map { Trophy(it.optString("n"), it.optString("d"), it.optString("k")) }
+        return Found(name, list)
     }
 
     // ---------------- RetroAchievements ----------------
@@ -195,7 +202,7 @@ object Achievements {
                 if (!t || seen[h]) return; seen[h] = 1;
                 var row = a.closest('tr'); out.push({t: t, h: h, r: row ? row.innerText : ''});
               });
-              return JSON.stringify(out);
+              return out.length ? JSON.stringify(out) : '';
             })()
             """.trimIndent(),
         ) ?: throw AchError("Couldn't reach PSNProfiles. Try again in a moment.")
@@ -226,7 +233,7 @@ object Achievements {
                 if (!k && img && /platinum|gold|silver|bronze/i.test(img.title)) k = img.title;
                 out.push({n: n, d: d, k: k});
               });
-              return JSON.stringify(out);
+              return out.length ? JSON.stringify(out) : '';
             })()
             """.trimIndent(),
             timeoutMs = 30_000,
@@ -248,13 +255,13 @@ object Achievements {
                 return JSON.stringify([{t: h1 ? h1.innerText.trim() : '', h: location.pathname.replace(/\/$/, '')}]);
               }
               var out = [], seen = {};
-              document.querySelectorAll('a[href^="/game/"]').forEach(function(a){
-                var h = a.getAttribute('href').split('?')[0].replace(/\/$/, '');
+              document.querySelectorAll('a[href*="/game/"]').forEach(function(a){
+                var h = (a.pathname || '').replace(/\/$/, '');
                 var t = (a.innerText || '').trim();
                 if (!/^\/game\/[^\/]+$/.test(h) || !t || seen[h]) return; seen[h] = 1;
                 out.push({t: t, h: h});
               });
-              return JSON.stringify(out);
+              return out.length ? JSON.stringify(out) : '';
             })()
             """.trimIndent(),
         ) ?: throw AchError("Couldn't reach TrueAchievements. Try again in a moment.")
@@ -269,8 +276,7 @@ object Achievements {
             (function(){ $READY
               var out = [], seen = {};
               document.querySelectorAll('a[href]').forEach(function(a){
-                var p = a.getAttribute('href').split('?')[0];
-                if (!/^\/a\d+\//.test(p)) return;
+                if (!/^\/a\d+\//.test(a.pathname || '')) return;
                 var n = (a.innerText || '').trim();
                 if (!n || seen[n]) return; seen[n] = 1;
                 var box = a.closest('li') || a.closest('div') || a.parentElement;
@@ -280,7 +286,7 @@ object Achievements {
                 if (m) g = m[1] + 'G';
                 out.push({n: n, d: d, k: g});
               });
-              return JSON.stringify(out);
+              return out.length ? JSON.stringify(out) : '';
             })()
             """.trimIndent(),
             timeoutMs = 30_000,
